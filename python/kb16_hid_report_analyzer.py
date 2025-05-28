@@ -154,74 +154,14 @@ class KB16HIDReportAnalyzer:
         self.report_size = 32
         return 32
     
-    def _detect_modifier_byte(self, report_data):
-        """修飾キーのバイトを自動検出する"""
-        # 各バイトを修飾キーとして解釈した場合の妥当性をチェック
-        modifier_candidates = []
-        
-        for i, byte_val in enumerate(report_data):
-            # 1バイト目（インデックス0）は修飾キーではないことが判明しているのでスキップ
-            if i == 0:
-                continue
-                
-            # 修飾キーらしい特徴をチェック
-            score = 0
-            
-            # 0x00の場合は修飾キーが押されていない可能性が高い
-            if byte_val == 0x00:
-                score += 10
-            
-            # 修飾キーの典型的なパターン（0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80）
-            if byte_val in [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]:
-                score += 20
-            
-            # 複数ビットが立っている場合（複数の修飾キーが押されている）
-            bit_count = bin(byte_val).count('1')
-            if 1 <= bit_count <= 4:  # 1-4個の修飾キーが押されている
-                score += 15
-            
-            # 0xFF は修飾キーではない可能性が高い
-            if byte_val == 0xFF:
-                score -= 20
-            
-            # キーコードらしい値（0x04-0xDD）は修飾キーではない可能性が高い
-            if 0x04 <= byte_val <= 0xDD:
-                score -= 25  # より強いペナルティ
-            
-            # 1バイト目以外の一般的でない値も修飾キーではない可能性が高い
-            if byte_val > 0x80 and byte_val not in [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]:
-                score -= 15
-            
-            modifier_candidates.append((i, score, byte_val))
-        
-        # スコアでソート
-        modifier_candidates.sort(key=lambda x: x[1], reverse=True)
-        
-        return modifier_candidates
-    
     def _analyze_report_format(self, report_data):
         """HIDレポート形式を解析する"""
         if not self.report_format:
-            # 修飾キーのバイトを自動検出
-            modifier_candidates = self._detect_modifier_byte(report_data)
-            
-            # 最も可能性の高い修飾キーバイトを選択（ただし、デバッグモードでは無効化）
-            modifier_index = None
-            if hasattr(self, 'debug_no_modifier') and self.debug_no_modifier:
-                modifier_index = -1  # 修飾キー解析を無効化
-            else:
-                # 通常は最初のバイトまたは最もスコアの高いバイトを使用
-                if modifier_candidates:
-                    modifier_index = modifier_candidates[0][0]
-                else:
-                    modifier_index = 0
-            
             # 最初のレポートから形式を推測
             self.report_format = {
                 "size": len(report_data),
-                "modifier_index": modifier_index,
-                "modifier_candidates": modifier_candidates,  # デバッグ用
-                "reserved_index": 1,  # 予約バイト
+                "modifier_index": 1,  # 修飾キーは1バイト目
+                "reserved_index": 0,  # 0バイト目は予約または無視
                 "key_indices": [2, 3, 4, 5, 6, 7],  # 標準的な6KROレイアウト
                 "format": "Standard"
             }
@@ -285,31 +225,21 @@ class KB16HIDReportAnalyzer:
         # 修飾キー (Shift, Ctrl, Alt, GUI)
         shift_pressed = False
         if report_format["format"] == "Standard" or report_format["format"] == "NKRO":
-            # 修飾キー候補のデバッグ表示
-            if hasattr(self, 'debug_mode') and self.debug_mode:
-                print("修飾キー候補の分析:")
-                for i, (byte_idx, score, byte_val) in enumerate(report_format.get("modifier_candidates", [])):
-                    print(f"  バイト{byte_idx}: 0x{byte_val:02X} (スコア: {score})")
-            
-            # 修飾キー解析が無効化されている場合
-            if report_format["modifier_index"] == -1:
-                print(f"修飾キー: 解析無効化")
-            else:
-                modifier = report_data[report_format["modifier_index"]]
-                mod_str = ""
-                if modifier & 0x01: mod_str += "L-Ctrl "
-                if modifier & 0x02: 
-                    mod_str += "L-Shift "
-                    shift_pressed = True
-                if modifier & 0x04: mod_str += "L-Alt "
-                if modifier & 0x08: mod_str += "L-GUI "
-                if modifier & 0x10: mod_str += "R-Ctrl "
-                if modifier & 0x20: 
-                    mod_str += "R-Shift "
-                    shift_pressed = True
-                if modifier & 0x40: mod_str += "R-Alt "
-                if modifier & 0x80: mod_str += "R-GUI "
-                print(f"修飾キー (バイト{report_format['modifier_index']}): {mod_str or 'なし'}")
+            modifier = report_data[report_format["modifier_index"]]
+            mod_str = ""
+            if modifier & 0x01: mod_str += "L-Ctrl "
+            if modifier & 0x02: 
+                mod_str += "L-Shift "
+                shift_pressed = True
+            if modifier & 0x04: mod_str += "L-Alt "
+            if modifier & 0x08: mod_str += "L-GUI "
+            if modifier & 0x10: mod_str += "R-Ctrl "
+            if modifier & 0x20: 
+                mod_str += "R-Shift "
+                shift_pressed = True
+            if modifier & 0x40: mod_str += "R-Alt "
+            if modifier & 0x80: mod_str += "R-GUI "
+            print(f"修飾キー: {mod_str or 'なし'}")
             
             # 押されているキー
             pressed_keys = []
