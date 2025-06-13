@@ -10,6 +10,10 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C
 
+// Seeed XIAO ESP32S3のI2Cピン設定
+#define SDA_PIN 5
+#define SCL_PIN 6
+
 // DOIO KB16デバイス情報
 #define DOIO_VID 0xD010
 #define DOIO_PID 0x1601
@@ -21,10 +25,10 @@
 #define VERBOSE_DEBUG 0  // 詳細デバッグ（必要時のみ有効化）
 
 // パフォーマンス設定
-#define USB_TASK_INTERVAL 5      // USB処理間隔（ms）- さらに短縮
-#define DISPLAY_UPDATE_INTERVAL 500  // ディスプレイ更新間隔（ms）
-#define KEY_REPEAT_DELAY 500     // 長押し検出遅延（ms）
-#define KEY_REPEAT_RATE 100      // 長押し時のリピート間隔（ms）
+#define USB_TASK_INTERVAL 0      // USB処理間隔（ms）- 遅延なし（DOIO_Bluetooth同等）
+#define DISPLAY_UPDATE_INTERVAL 100  // ディスプレイ更新間隔（ms）
+#define KEY_REPEAT_DELAY 200     // 長押し検出遅延（ms）- DOIO_Bluetooth同等
+#define KEY_REPEAT_RATE 30       // 長押し時のリピート間隔（ms）- 高速化
 
 // DOIO KB16 キーマッピング構造体
 struct KeyMapping {
@@ -54,6 +58,9 @@ const KeyMapping kb16_key_map[] = {
     { 5, 0x04, 3, 3 },  // byte5_bit2
 };
 
+// グローバル変数の前方宣言
+extern bool displayInitialized;
+
 // カスタムUSBホストクラス（DOIO KB16専用）
 class DOIOKB16UsbHost : public EspUsbHost {
 private:
@@ -70,6 +77,10 @@ private:
     unsigned long lastRepeatTime[4][4] = {0}; // 最後のリピート時刻
     bool keyRepeating[4][4] = {false};        // リピート中フラグ
     
+    // キー重複検出防止用（DOIO_Bluetooth同等の応答性）
+    unsigned long lastKeyProcessTime[4][4] = {0};  // 最後の処理時刻
+    const unsigned long KEY_DEBOUNCE_TIME = 15;   // 重複防止間隔（ms）
+    
     // 表示の最適化用
     unsigned long lastDisplayUpdate = 0;
     unsigned long lastConnectionUpdate = 0;
@@ -84,6 +95,7 @@ public:
                 keyPressTime[i][j] = 0;
                 lastRepeatTime[i][j] = 0;
                 keyRepeating[i][j] = false;
+                lastKeyProcessTime[i][j] = 0;  // 重複検出用初期化
             }
         }
         textBuffer = "";
@@ -123,10 +135,10 @@ public:
             isDOIOKeyboard = true;
             isConnected = true;  // 強制接続モード
             #if DEBUG_ENABLED
-            Serial.println("*** 強制DOIO KB16モード! カスタムキーコードマッピングを使用します ***");
+            Serial.println("*** 強制DOIO KB16モード! カスタムキーマッピング(a-o,SHIFT)を使用します ***");
             Serial.printf("  - 実際のVID/PID: 0x%04X/0x%04X\n", device_vendor_id, device_product_id);
             Serial.println("  - 16バイト固定レポートサイズ");
-            Serial.println("  - 改良されたキーマッピング適用");
+            Serial.println("  - キーレイアウト: a-o (1-15), SHIFT (16)");
             #endif
         }
         
@@ -220,6 +232,15 @@ public:
                 
                 // キー状態に変化があった場合
                 if (current_state != last_state) {
+                    // DOIO_Bluetooth同等の重複検出防止
+                    if (current_state && 
+                        (currentTime - lastKeyProcessTime[mapping.row][mapping.col]) < KEY_DEBOUNCE_TIME) {
+                        #if VERBOSE_DEBUG
+                        Serial.printf("Key (%d,%d) debounce skip (too fast)\n", mapping.row, mapping.col);
+                        #endif
+                        continue; // 15ms以内の再入力は無視
+                    }
+                    
                     kb16_key_states[mapping.row][mapping.col] = current_state;
                     
                     #if DEBUG_ENABLED
@@ -232,6 +253,7 @@ public:
                         lastPressedKeyRow = mapping.row;
                         lastPressedKeyCol = mapping.col;
                         keyPressTime[mapping.row][mapping.col] = currentTime;
+                        lastKeyProcessTime[mapping.row][mapping.col] = currentTime; // 重複検出更新
                         keyRepeating[mapping.row][mapping.col] = false;
                         
                         processKeyPress(mapping.row, mapping.col);
@@ -251,6 +273,7 @@ public:
                         // 長押し開始
                         keyRepeating[mapping.row][mapping.col] = true;
                         lastRepeatTime[mapping.row][mapping.col] = currentTime;
+                        lastKeyProcessTime[mapping.row][mapping.col] = currentTime; // 重複検出更新
                         #if DEBUG_ENABLED
                         Serial.printf("Key (%d,%d) repeat start\n", mapping.row, mapping.col);
                         #endif
@@ -258,6 +281,7 @@ public:
                              (currentTime - lastRepeatTime[mapping.row][mapping.col]) >= KEY_REPEAT_RATE) {
                         // リピート実行
                         lastRepeatTime[mapping.row][mapping.col] = currentTime;
+                        lastKeyProcessTime[mapping.row][mapping.col] = currentTime; // 重複検出更新
                         processKeyPress(mapping.row, mapping.col);
                         #if VERBOSE_DEBUG
                         Serial.printf("Key (%d,%d) repeat\n", mapping.row, mapping.col);
@@ -274,38 +298,52 @@ public:
     }
     
     void updateKeyMatrixDisplay() {
-        if (!display) return;
+        if (!display || !displayInitialized) return;
         
-        unsigned long now = millis();
-        if (now - lastDisplayUpdate < DISPLAY_UPDATE_INTERVAL) {
-            return; // 更新頻度制限
-        }
-        lastDisplayUpdate = now;
-        
+        // キー入力時は即座に更新（DOIO_Bluetooth同等の応答性）
         display->clearDisplay();
         display->setTextSize(1);
         display->setTextColor(SSD1306_WHITE);
         
         // ヘッダー
         display->setCursor(0, 0);
-        display->println("DOIO KB16 Monitor");
+        display->println("DOIO KB16: a-o,SHIFT");
         
         // 最後に押されたキー情報
         display->setCursor(0, 10);
         if (lastPressedKeyRow >= 0 && lastPressedKeyCol >= 0) {
-            display->printf("Last: (%d,%d)", lastPressedKeyRow, lastPressedKeyCol);
+            // 押されたキーの実際の文字を表示
+            char keyLabels[4][4] = {
+                {'a', 'b', 'c', 'd'},
+                {'e', 'f', 'g', 'h'},
+                {'i', 'j', 'k', 'l'},
+                {'m', 'n', 'o', 'S'}  // Sは SHIFTキー
+            };
+            char pressedKey = keyLabels[lastPressedKeyRow][lastPressedKeyCol];
+            display->printf("Last: %c (%d,%d)", pressedKey, lastPressedKeyRow, lastPressedKeyCol);
         } else {
             display->print("Last: None");
         }
         
-        // キーマトリックス表示（4x4）- コンパクト表示
+        // キーマトリックス表示（4x4）- 文字ラベル付き
         display->setCursor(0, 20);
-        display->println("Keys:");
+        display->println("Keys (a-o,S):");
+        
+        char keyLabels[4][4] = {
+            {'a', 'b', 'c', 'd'},
+            {'e', 'f', 'g', 'h'},
+            {'i', 'j', 'k', 'l'},
+            {'m', 'n', 'o', 'S'}
+        };
         
         for (int row = 0; row < 4; row++) {
             display->setCursor(0, 30 + row * 8);
             for (int col = 0; col < 4; col++) {
-                display->print(kb16_key_states[row][col] ? "*" : ".");
+                if (kb16_key_states[row][col]) {
+                    display->print(keyLabels[row][col]); // 押下時は文字を表示
+                } else {
+                    display->print("."); // 未押下時はドット
+                }
             }
         }
         
@@ -324,6 +362,8 @@ public:
     
     // 接続状態表示の更新
     void updateConnectionDisplay() {
+        if (!display || !displayInitialized) return;
+        
         static bool lastConnectionState = false;
         bool currentConnectionState = isDeviceConnected();
         
@@ -342,9 +382,9 @@ public:
                 
                 if (isDOIOKeyboard) {
                     display->setCursor(5, 30);
-                    display->println("Special Mode");
+                    display->println("Layout: a-o");
                     display->setCursor(0, 45);
-                    display->println("Keys: Ready");
+                    display->println("16th: SHIFT");
                 } else {
                     display->setCursor(5, 30);
                     display->println("Standard HID");
@@ -374,6 +414,8 @@ public:
     
     // 定期的な表示更新処理（制御強化・点滅完全防止）
     void periodicDisplayUpdate() {
+        if (!display || !displayInitialized) return;
+        
         static unsigned long lastUpdateTime = 0;
         static bool lastDisplayUpdateFlag = false;
         unsigned long currentTime = millis();
@@ -447,43 +489,43 @@ public:
     
     // キー押下処理の統一メソッド
     void processKeyPress(int row, int col) {
-        // DOIO_Bluetoothプロジェクトから移植した正しいHIDキーコードマッピング
+        // 左上から順にa-o, 最後の16番目はSHIFTキーのマッピング
         uint8_t hid_keycode = 0;
         char keyChar = '?';
         
-        // 修正されたHIDキーコードマッピング（実際のDOIO KB16配置に合わせて）
+        // Pythonのキーコード表に基づく正確なマッピング（左上から順に）
         if (row == 0 && col == 0) {
-            hid_keycode = 0x22; keyChar = '1'; // 1キー
+            hid_keycode = 0x04; keyChar = 'a'; // aキー (0x04)
         } else if (row == 0 && col == 1) {
-            hid_keycode = 0x23; keyChar = '2'; // 2キー
+            hid_keycode = 0x05; keyChar = 'b'; // bキー (0x05)
         } else if (row == 0 && col == 2) {
-            hid_keycode = 0x24; keyChar = '3'; // 3キー
+            hid_keycode = 0x06; keyChar = 'c'; // cキー (0x06)
         } else if (row == 0 && col == 3) {
-            hid_keycode = 0x25; keyChar = '4'; // 4キー
+            hid_keycode = 0x07; keyChar = 'd'; // dキー (0x07)
         } else if (row == 1 && col == 0) {
-            hid_keycode = 0x26; keyChar = '5'; // 5キー
+            hid_keycode = 0x08; keyChar = 'e'; // eキー (0x08)
         } else if (row == 1 && col == 1) {
-            hid_keycode = 0x27; keyChar = '6'; // 6キー
+            hid_keycode = 0x09; keyChar = 'f'; // fキー (0x09)
         } else if (row == 1 && col == 2) {
-            hid_keycode = 0x30; keyChar = '7'; // 7キー（修正）
+            hid_keycode = 0x0A; keyChar = 'g'; // gキー (0x0A)
         } else if (row == 1 && col == 3) {
-            hid_keycode = 0x31; keyChar = '8'; // 8キー（修正）
+            hid_keycode = 0x0B; keyChar = 'h'; // hキー (0x0B)
         } else if (row == 2 && col == 0) {
-            hid_keycode = 0x32; keyChar = '9'; // 9キー（修正）
+            hid_keycode = 0x0C; keyChar = 'i'; // iキー (0x0C)
         } else if (row == 2 && col == 1) {
-            hid_keycode = 0x33; keyChar = '0'; // 0キー（修正）
+            hid_keycode = 0x0D; keyChar = 'j'; // jキー (0x0D)
         } else if (row == 2 && col == 2) {
-            hid_keycode = 0x28; keyChar = 'E'; // Enterキー
+            hid_keycode = 0x0E; keyChar = 'k'; // kキー (0x0E)
         } else if (row == 2 && col == 3) {
-            hid_keycode = 0x29; keyChar = 'X'; // Escキー
+            hid_keycode = 0x0F; keyChar = 'l'; // lキー (0x0F)
         } else if (row == 3 && col == 0) {
-            hid_keycode = 0x2A; keyChar = 'B'; // Backspaceキー
+            hid_keycode = 0x10; keyChar = 'm'; // mキー (0x10)
         } else if (row == 3 && col == 1) {
-            hid_keycode = 0x08; keyChar = 'A'; // Aキー（実際のユーザーキー配置）
+            hid_keycode = 0x11; keyChar = 'n'; // nキー (0x11)
         } else if (row == 3 && col == 2) {
-            hid_keycode = 0x2C; keyChar = ' '; // Spaceキー
+            hid_keycode = 0x12; keyChar = 'o'; // oキー (0x12)
         } else if (row == 3 && col == 3) {
-            hid_keycode = 0x2B; keyChar = 'T'; // Tabキー
+            hid_keycode = 0xE1; keyChar = 'S'; // SHIFTキー (0xE1 = LEFT_SHIFT)
         }
         
         #if VERBOSE_DEBUG
@@ -491,10 +533,10 @@ public:
         #endif
         
         // テキストバッファに追加
-        if (keyChar == 'B' && textBuffer.length() > 0) {
-            // Backspace処理
-            textBuffer = textBuffer.substring(0, textBuffer.length() - 1);
-        } else if (keyChar != 'B' && keyChar != 'E' && keyChar != 'X' && keyChar != 'T') {
+        if (keyChar == 'S') {
+            // Shiftキーは特別処理（大文字化モードなど）
+            textBuffer += "[SHIFT]";
+        } else {
             textBuffer += keyChar;
             
             // 行の長さ制限
@@ -506,7 +548,7 @@ public:
         // ここでBLEキーボードへの送信や、シリアル出力などの実際の処理を行う
         // 現在はディスプレイ表示とテキストバッファ更新のみ
         #if DEBUG_ENABLED
-        Serial.printf("Key processed: (%d,%d) -> '%c'\n", row, col, keyChar);
+        Serial.printf("Key processed: (%d,%d) -> '%c' (HID:0x%02X)\n", row, col, keyChar, hid_keycode);
         #endif
     }
 };
@@ -514,18 +556,23 @@ public:
 // グローバル変数
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 DOIOKB16UsbHost* usbHost;
+bool displayInitialized = false; // ディスプレイ初期化状態を追跡
 
 // 関数宣言
 void initDisplay();
 void showWriteMode();
 void showUSBHostMode();
+void scanI2CDevices();
 
 void setup() {
     // CPU周波数を240MHzに設定（パフォーマンス向上）
     setCpuFrequencyMhz(240);
     
     Serial.begin(115200);
-    while (!Serial) delay(10);
+    // Serialポートの安定化待機を延長
+    for(int i = 0; i < 50 && !Serial; i++) {
+        delay(100);
+    }
     
     Serial.println("=================================");
     Serial.println("DOIO KB16 USB-SSD1306 Display System");
@@ -533,9 +580,13 @@ void setup() {
     Serial.printf("CPU Frequency: %d MHz\n", getCpuFrequencyMhz());
     Serial.println("=================================");
     
-    // I2C初期化（電力とクロック設定を最適化）
-    Wire.begin();
-    Wire.setClock(100000); // 100kHzに設定（電力消費を抑制）
+    // I2C初期化（明示的なピン指定とクロック設定）
+    Serial.printf("Initializing I2C: SDA=%d, SCL=%d\n", SDA_PIN, SCL_PIN);
+    Wire.begin(SDA_PIN, SCL_PIN);
+    Wire.setClock(100000); // 100kHzに設定（電力消費を抑制・安定性向上）
+    
+    // I2C初期化の確認
+    delay(500);
     
     // SSD1306ディスプレイ初期化
     Serial.println("Initializing display...");
@@ -562,63 +613,140 @@ void setup() {
 }
 
 void loop() {
-    // USBHostタスク処理（応答性重視：5ms間隔で高頻度処理）
-    static unsigned long lastUsbTask = 0;
+    // DOIO_Bluetoothプロジェクト同等の最高応答性設定
+    // USB処理は遅延なしで実行（連続処理）
+    if (usbHost) {
+        usbHost->task();
+    }
+    
+    // 表示更新は必要時のみ実行（応答性重視）
     static unsigned long lastDisplayCheck = 0;
     unsigned long now = millis();
     
-    // USB処理の応答性を最大化（10ms -> 5ms）
-    if (usbHost && (now - lastUsbTask) > USB_TASK_INTERVAL) { 
-        usbHost->task();
-        lastUsbTask = now;
-    }
-    
-    // 表示更新は必要時のみ実行（1秒間隔に増加）
-    if (usbHost && (now - lastDisplayCheck) > 1000) { 
+    if (usbHost && (now - lastDisplayCheck) > 100) { 
         ((DOIOKB16UsbHost*)usbHost)->periodicDisplayUpdate();
         lastDisplayCheck = now;
     }
     
-    // CPU負荷軽減のため最小限の待機（5ms -> 2ms：さらなる応答性向上）
-    delay(2);
+    // delay()を完全に削除（DOIO_Bluetooth同等の応答性実現）
 }
 
-void initDisplay() {
-    // 電源安定化のため少し待機
-    delay(100);
+void scanI2CDevices() {
+    Serial.println("Scanning I2C devices...");
+    byte error, address;
+    int nDevices = 0;
     
-    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-        Serial.println("SSD1306 allocation failed - retrying...");
+    for(address = 1; address < 127; address++) {
+        Wire.beginTransmission(address);
+        error = Wire.endTransmission();
         
-        // リトライ機構（バッテリー電源時の不安定性対策）
-        delay(500);
-        if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-            Serial.println("SSD1306 allocation failed - second attempt");
-            delay(1000);
-            if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-                Serial.println("SSD1306 allocation failed - final attempt failed");
-                for(;;) {
-                    Serial.println("Display initialization failed - check power/connections");
-                    delay(5000);
-                }
-            }
+        if (error == 0) {
+            Serial.printf("I2C device found at address 0x%02X\n", address);
+            nDevices++;
         }
     }
     
-    // 表示設定を調整（電力消費を抑制）
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("Display initialized");
-    display.display();
-    delay(1000);
+    if (nDevices == 0) {
+        Serial.println("No I2C devices found");
+    } else {
+        Serial.printf("Found %d I2C device(s)\n", nDevices);
+    }
+}
+
+void initDisplay() {
+    Serial.println("Starting display initialization...");
     
-    Serial.println("SSD1306 display initialized successfully");
+    // 電源安定化のため待機時間を延長
+    delay(500);
+    
+    // I2Cデバイスをスキャン
+    scanI2CDevices();
+    
+    // SSD1306の初期化を試行
+    Serial.printf("Attempting to initialize SSD1306 at address 0x%02X\n", SCREEN_ADDRESS);
+    
+    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+        Serial.println("SSD1306 allocation failed - trying alternative addresses...");
+        
+        // 一般的なSSD1306アドレス（0x3D）も試行
+        if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3D)) {
+            Serial.println("SSD1306 allocation failed at 0x3D - retrying original address...");
+            
+            // リトライ機構（バッテリー電源時の不安定性対策）
+            delay(1000);
+            if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+                Serial.println("SSD1306 allocation failed - second attempt");
+                delay(1000);
+                if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+                    Serial.println("SSD1306 allocation failed - final attempt failed");
+                    Serial.println("Possible issues:");
+                    Serial.println("1. Check I2C wiring (SDA/SCL)");
+                    Serial.println("2. Check power supply (3.3V/5V)");
+                    Serial.println("3. Verify I2C address");
+                    Serial.println("4. Check for loose connections");
+                    
+                    // I2Cを再初期化して再試行
+                    Wire.end();
+                    delay(100);
+                    Wire.begin(SDA_PIN, SCL_PIN);
+                    Wire.setClock(100000);
+                    delay(500);
+                    
+                    Serial.println("Attempting final retry after I2C reset...");
+                    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+                        Serial.println("All initialization attempts failed");
+                        // 無限ループではなく、エラー状態で続行
+                        displayInitialized = false;
+                        return;
+                    } else {
+                        Serial.println("Success after I2C reset!");
+                        displayInitialized = true;
+                    }
+                } else {
+                    displayInitialized = true;
+                }
+            } else {
+                displayInitialized = true;
+            }
+        } else {
+            Serial.println("SSD1306 initialized successfully at address 0x3D");
+            displayInitialized = true;
+        }
+    } else {
+        Serial.printf("SSD1306 initialized successfully at address 0x%02X\n", SCREEN_ADDRESS);
+        displayInitialized = true;
+    }
+    
+    if (displayInitialized) {
+        // 表示設定を調整
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+        display.println("Display OK");
+        display.setCursor(0, 10);
+        display.printf("Addr: 0x%02X", SCREEN_ADDRESS);
+        display.display();
+        delay(2000);
+        
+        Serial.println("SSD1306 display initialized successfully");
+    } else {
+        Serial.println("Display initialization failed - continuing without display");
+    }
 }
 
 void showWriteMode() {
     Serial.println("Entering 5-second write mode...");
+    
+    if (!displayInitialized) {
+        Serial.println("Display not available - showing countdown in serial only");
+        for (int i = 5; i > 0; i--) {
+            Serial.printf("Write mode countdown: %d\n", i);
+            delay(1000);
+        }
+        Serial.println("Write mode ended. Switching to USB Host mode.");
+        return;
+    }
     
     for (int i = 5; i > 0; i--) {
         display.clearDisplay();
@@ -646,6 +774,11 @@ void showWriteMode() {
 }
 
 void showUSBHostMode() {
+    if (!displayInitialized) {
+        Serial.println("USB Host mode activated. Waiting for DOIO KB16... (Display not available)");
+        return;
+    }
+    
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
