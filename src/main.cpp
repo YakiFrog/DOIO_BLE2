@@ -22,9 +22,9 @@
 
 // 設定（OLED表示専用）
 #define MAX_TEXT_LENGTH 50
-#define DEBUG_ENABLED 0
+#define DEBUG_ENABLED 1  // デバッグ情報を有効化
 #define VERBOSE_DEBUG 0
-#define SERIAL_OUTPUT_DISABLED 1  // シリアル出力を完全無効化
+#define SERIAL_OUTPUT_DISABLED 0  // シリアル出力を一時的に有効化（バイト数確認用）
 
 // パフォーマンス設定（最高応答性）
 #define USB_TASK_INTERVAL 0
@@ -221,7 +221,18 @@ public:
         lastKeyPresses = "";
         String pressed_chars = "";
         
-        if (format.format == "Standard") {
+        if (format.format == "DOIO_KB16_16BYTE") {
+            // DOIO KB16: 16バイトレポートの全バイトをチェック
+            for (int i = 2; i < data_size; i++) {
+                if (report_data[i] != 0) {
+                    uint8_t keycode = report_data[i];
+                    String key_str = keycodeToString(keycode, false);
+                    if (pressed_chars.length() > 0) pressed_chars += ", ";
+                    pressed_chars += key_str;
+                }
+            }
+        } else if (format.format == "Standard" || format.format == "DOIO_KB16_8BYTE") {
+            // 標準6KROまたはDOIO KB16の8バイトモード
             for (int i = 0; i < 6; i++) {
                 int idx = format.key_indices[i];
                 if (idx < data_size && report_data[idx] != 0) {
@@ -232,6 +243,7 @@ public:
                 }
             }
         } else {
+            // NKRO形式
             for (int i = 2; i < data_size; i++) {
                 for (int bit = 0; bit < 8; bit++) {
                     if (report_data[i] & (1 << bit)) {
@@ -263,7 +275,7 @@ public:
             report_format.size = data_size;
             
             if (isDOIOKeyboard && data_size == 16) {
-                // DOIO KB16: 16バイトレポート
+                // DOIO KB16: 16バイトレポート（Pythonアナライザーと同一）
                 report_format.modifier_index = 1;  // バイト1が修飾キー（通常は0x00）
                 report_format.reserved_index = 0;  // バイト0はDOIO固有フィールド（0x06など）
                 report_format.key_indices[0] = 2;  // バイト2からキーコード開始
@@ -272,7 +284,19 @@ public:
                 report_format.key_indices[3] = 5;
                 report_format.key_indices[4] = 6;
                 report_format.key_indices[5] = 7;
-                report_format.format = "DOIO_KB16";
+                // 16バイトレポートでは8-15バイトも使用可能
+                report_format.format = "DOIO_KB16_16BYTE";
+            } else if (isDOIOKeyboard && data_size == 8) {
+                // DOIO KB16: 8バイトレポート（標準モード）
+                report_format.modifier_index = 0;  // バイト0が修飾キー
+                report_format.reserved_index = 1;  // バイト1は予約
+                report_format.key_indices[0] = 2;  // バイト2からキーコード開始
+                report_format.key_indices[1] = 3;
+                report_format.key_indices[2] = 4;
+                report_format.key_indices[3] = 5;
+                report_format.key_indices[4] = 6;
+                report_format.key_indices[5] = 7;
+                report_format.format = "DOIO_KB16_8BYTE";
             } else {
                 // 標準キーボード: 8バイトレポート
                 report_format.modifier_index = 0;  // バイト0が修飾キー
@@ -313,7 +337,9 @@ public:
     
     // Pythonアナライザーのメインレポート処理（完全移植）
     void processReportPythonStyle(const hid_keyboard_report_t &report) {
-        // レポートデータを配列に変換
+        // 標準8バイトHIDレポート構造体では16バイトを取得できないため、
+        // onReceiveメソッドでの生データ処理に依存する
+        // この関数は標準キーボード用のフォールバック処理として保持
         uint8_t current_report[32] = {0};
         current_report[0] = report.modifier;
         current_report[1] = report.reserved;
@@ -321,7 +347,8 @@ public:
             current_report[2 + i] = report.keycode[i];
         }
         
-        processRawReportData(current_report, min(report_size, 8));
+        // 8バイトのみ処理（16バイトはonReceiveで処理）
+        processRawReportData(current_report, 8);
     }
     
     // 生のレポートデータ処理（Pythonアナライザーのpretty_print_reportを移植）
@@ -347,9 +374,14 @@ public:
         Serial.println("バイト構造:");
         for (int i = 0; i < data_size; i++) {
             String description = "";
-            if (isDOIOKeyboard) {
+            if (isDOIOKeyboard && data_size == 16) {
                 if (i == 0) description = " (DOIO特殊フィールド)";
                 else if (i == 1) description = " (修飾キー)";
+                else if (i >= 2 && i <= 15) description = " (キーコード" + String(i-1) + ")";
+                else description = " (拡張データ)";
+            } else if (isDOIOKeyboard && data_size == 8) {
+                if (i == 0) description = " (修飾キー)";
+                else if (i == 1) description = " (予約)";
                 else if (i >= 2 && i <= 7) description = " (キーコード" + String(i-1) + ")";
                 else description = " (拡張データ)";
             } else {
@@ -367,6 +399,17 @@ public:
             Serial.printf("  特殊フィールド: 0x%02X\n", report_data[0]);
             Serial.printf("  修飾キーフィールド: 0x%02X\n", report_data[1]);
             Serial.printf("  最初のキーコード: 0x%02X\n", report_data[2]);
+            
+            if (data_size == 16) {
+                Serial.println("  16バイトレポート解析:");
+                Serial.print("  全キーコード: ");
+                for (int i = 2; i < 16; i++) {
+                    if (report_data[i] != 0) {
+                        Serial.printf("0x%02X ", report_data[i]);
+                    }
+                }
+                Serial.println();
+            }
             
             // バイトパターンの解析
             Serial.println("  パターン解析:");
@@ -435,8 +478,35 @@ public:
         Serial.println("キー検出:");
         #endif
         
-        if (format.format == "Standard") {
-            // 標準的な6KROレポート
+        if (format.format == "DOIO_KB16_16BYTE") {
+            // DOIO KB16: 16バイトレポート
+            #if !SERIAL_OUTPUT_DISABLED
+            Serial.println("  DOIO KB16 16バイトフォーマット");
+            #endif
+            // 16バイトレポートでは、2-15バイトすべてをキーコードとして処理
+            for (int i = 2; i < data_size; i++) {
+                if (report_data[i] != 0) {
+                    uint8_t keycode = report_data[i];
+                    
+                    if (pressed_keys.length() > 0) pressed_keys += ", ";
+                    pressed_keys += "0x" + String(keycode, HEX);
+                    
+                    // キーコードを文字に変換
+                    String key_str = keycodeToString(keycode, shift_pressed);
+                    if (pressed_chars.length() > 0) pressed_chars += ", ";
+                    pressed_chars += key_str;
+                    
+                    #if !SERIAL_OUTPUT_DISABLED
+                    Serial.printf("    位置[%d]: キーコード=0x%02X, 文字='%s'\n", 
+                                 i, keycode, key_str.c_str());
+                    #endif
+                    
+                    // 仮想マトリックス位置の計算（a-oマッピング用）
+                    processDetectedKey(keycode, key_str, shift_pressed);
+                }
+            }
+        } else if (format.format == "Standard" || format.format == "DOIO_KB16_8BYTE") {
+            // 標準的な6KROレポート またはDOIO KB16の8バイトモード
             #if !SERIAL_OUTPUT_DISABLED
             Serial.println("  標準6KROフォーマット");
             #endif
@@ -635,22 +705,22 @@ public:
         }
     }
     
-    // 拡張されたonReceiveメソッド（実際の生データを処理）
+    // 拡張されたonReceiveメソッド（Pythonアナライザーと同じ16バイト処理）
     void onReceive(const usb_transfer_t *transfer) override {
         EspUsbHost::onReceive(transfer);
         
         if (transfer->actual_num_bytes == 0) return;
         
-        // Pythonアナライザーと同じように全ての受信データを詳細表示
-        #if !SERIAL_OUTPUT_DISABLED
-        Serial.println("\n╔═══════════════════════════════╗");
-        Serial.println("║     USB RAW DATA RECEIVED     ║");
-        Serial.println("╚═══════════════════════════════╝");
+        // Pythonアナライザーと同じように受信データをログ出力
+        Serial.println("\n╔══════════════════════════════════════╗");
+        Serial.println("║         USB RAW DATA RECEIVED        ║");
+        Serial.println("╚══════════════════════════════════════╝");
         Serial.printf("受信時刻: %lu ms\n", millis());
-        Serial.printf("データサイズ: %d bytes\n", transfer->actual_num_bytes);
-        Serial.println("─────────────────────────────────");
+        Serial.printf("実際の受信バイト数: %d bytes\n", transfer->actual_num_bytes);
+        Serial.printf("期待するバイト数: %d bytes (DOIO KB16)\n", isDOIOKeyboard ? 16 : 8);
+        Serial.println("──────────────────────────────────────");
         
-        // 16進数表示（Pythonと同じフォーマット）
+        // 16進数表示（Pythonと完全同一フォーマット）
         String hex_data = "";
         for (int i = 0; i < transfer->actual_num_bytes; i++) {
             if (transfer->data_buffer[i] < 16) hex_data += "0";
@@ -658,66 +728,64 @@ public:
         }
         hex_data.trim();
         hex_data.toUpperCase();
-        Serial.printf("RAW HEX: %s\n", hex_data.c_str());
-        Serial.println("─────────────────────────────────");
+        Serial.printf("RAW HEX [%d bytes]: %s\n", transfer->actual_num_bytes, hex_data.c_str());
+        Serial.println("──────────────────────────────────────");
         
         // バイト毎の詳細表示（Pythonと同じ）
-        Serial.println("バイト詳細:");
+        Serial.println("バイト詳細解析:");
         for (int i = 0; i < transfer->actual_num_bytes; i++) {
-            Serial.printf("  [%2d] = 0x%02X (%3d) = %c\n", 
-                         i, 
-                         transfer->data_buffer[i], 
-                         transfer->data_buffer[i],
-                         (transfer->data_buffer[i] >= 32 && transfer->data_buffer[i] <= 126) ? 
-                         transfer->data_buffer[i] : '.');
+            char ascii_char = (transfer->data_buffer[i] >= 32 && transfer->data_buffer[i] <= 126) ? 
+                             transfer->data_buffer[i] : '.';
+            Serial.printf("  [%2d] = 0x%02X (%3d) = '%c'\n", 
+                         i, transfer->data_buffer[i], transfer->data_buffer[i], ascii_char);
         }
+        Serial.println("──────────────────────────────────────");
         
-        // バイナリ表示（8ビット）
-        Serial.println("バイナリ表示:");
-        for (int i = 0; i < transfer->actual_num_bytes; i++) {
-            Serial.printf("  [%2d] = ", i);
-            for (int bit = 7; bit >= 0; bit--) {
-                Serial.print((transfer->data_buffer[i] & (1 << bit)) ? '1' : '0');
-            }
-            Serial.printf(" (0x%02X)\n", transfer->data_buffer[i]);
-        }
-        
-        // デバイス固有の解析
-        Serial.println("デバイス解析:");
+        // DOIO KB16固有の分析
         if (isDOIOKeyboard) {
-            Serial.println("  DOIO KB16 モード");
+            Serial.println("DOIO KB16 分析:");
+            Serial.printf("  期待サイズ: 16バイト\n");
+            Serial.printf("  実際のサイズ: %dバイト\n", transfer->actual_num_bytes);
+            
             if (transfer->actual_num_bytes >= 3) {
-                Serial.printf("  特殊フィールド[0]: 0x%02X\n", transfer->data_buffer[0]);
-                Serial.printf("  修飾キー[1]: 0x%02X\n", transfer->data_buffer[1]);
-                Serial.printf("  キーコード開始[2]: 0x%02X\n", transfer->data_buffer[2]);
+                Serial.printf("  [0] 特殊フィールド: 0x%02X\n", transfer->data_buffer[0]);
+                Serial.printf("  [1] 修飾キー: 0x%02X\n", transfer->data_buffer[1]);
+                Serial.printf("  [2] 最初のキーコード: 0x%02X\n", transfer->data_buffer[2]);
                 
-                // 全てのキーコードバイトを表示
-                Serial.print("  全キーコード: ");
+                // 16バイト全体のキーコード表示
+                Serial.print("  キーコード部分: ");
+                bool hasKeys = false;
                 for (int i = 2; i < transfer->actual_num_bytes; i++) {
                     if (transfer->data_buffer[i] != 0) {
                         Serial.printf("0x%02X ", transfer->data_buffer[i]);
+                        hasKeys = true;
                     }
                 }
+                if (!hasKeys) Serial.print("なし");
                 Serial.println();
             }
-        } else {
-            Serial.println("  標準キーボード モード");
-            if (transfer->actual_num_bytes >= 3) {
-                Serial.printf("  修飾キー[0]: 0x%02X\n", transfer->data_buffer[0]);
-                Serial.printf("  予約[1]: 0x%02X\n", transfer->data_buffer[1]);
-                Serial.printf("  キーコード開始[2]: 0x%02X\n", transfer->data_buffer[2]);
+            
+            // バイトパターン解析
+            if (transfer->actual_num_bytes >= 1) {
+                Serial.println("  パターン解析:");
+                if (transfer->data_buffer[0] == 0x06) 
+                    Serial.println("    ✓ 標準DOIOパターン検出 (0x06)");
+                if (transfer->actual_num_bytes >= 2 && transfer->data_buffer[1] == 0x00) 
+                    Serial.println("    ✓ 修飾キーなし (0x00)");
+                if (transfer->actual_num_bytes == 16) 
+                    Serial.println("    ✓ 16バイトレポート確認");
+                else 
+                    Serial.printf("    ⚠ 予期しないサイズ: %dバイト\n", transfer->actual_num_bytes);
             }
         }
         
-        Serial.println("─────────────────────────────────");
-        Serial.println("╚═══════════════════════════════╝\n");
-        #endif
+        Serial.println("╚══════════════════════════════════════╝\n");
         
-        // 実際のサイズでレポートを処理
+        // 実際の受信サイズでレポートを処理（Pythonと同じ）
         processRawReportData(transfer->data_buffer, transfer->actual_num_bytes);
     }
     
-    // ディスプレイ更新処理（リアルタイムバイトデータ表示）
+    // ディスプレイ更新処理（16バイト全体表示に特化）
     void updateDisplay() {
         if (!display || !displayInitialized) return;
         
@@ -742,48 +810,87 @@ public:
             display->println("to start analysis");
         } else {
             if (detailMode) {
-                // 詳細モード：バイト詳細表示
+                // 詳細モード：16バイト完全表示（4x4グリッド）
                 display->setCursor(0, 0);
-                display->println("Detail [ESC=Normal]");
+                display->printf("16-Byte Grid [ESC]");
+                
+                // 16バイトの生データをバイト配列として取得
+                uint8_t rawBytes[16] = {0};
+                int actualBytes = 0;
+                
+                // lastRawDataから生バイト値を復元
+                if (lastRawData.length() > 0) {
+                    String data = lastRawData;
+                    int index = 0;
+                    while (data.length() > 0 && index < 16) {
+                        int commaPos = data.indexOf(',');
+                        String byteStr;
+                        if (commaPos >= 0) {
+                            byteStr = data.substring(0, commaPos);
+                            data = data.substring(commaPos + 1);
+                        } else {
+                            byteStr = data;
+                            data = "";
+                        }
+                        rawBytes[index] = byteStr.toInt();
+                        index++;
+                        actualBytes++;
+                    }
+                }
+                
+                // 4x4グリッドで16バイトを表示（より読みやすく）
+                display->setTextSize(1);
+                for (int row = 0; row < 4; row++) {
+                    display->setCursor(0, 12 + row * 12);
+                    for (int col = 0; col < 4; col++) {
+                        int byte_index = row * 4 + col;
+                        if (byte_index < actualBytes) {
+                            display->printf("%02X ", rawBytes[byte_index]);
+                        } else {
+                            display->print("-- ");
+                        }
+                    }
+                }
+                
+                // バイト数とキー情報表示
+                display->setCursor(0, 60);
+                display->printf("%d/16 %s", actualBytes, 
+                    lastKeyPresses.length() > 8 ? 
+                    lastKeyPresses.substring(0, 8).c_str() : lastKeyPresses.c_str());
+                
+            } else {
+                // 通常モード：概要表示
+                display->setCursor(0, 0);
+                display->printf("Normal [ESC=Grid]");
                 
                 display->setCursor(0, 12);
-                display->printf("HEX: %s", lastHexData.length() > 18 ? lastHexData.substring(0, 18).c_str() : lastHexData.c_str());
+                display->printf("Device: %s", isDOIOKeyboard && device_vendor_id == DOIO_VID ? "KB16" : "STD");
                 
                 display->setCursor(0, 24);
-                display->printf("RAW: %s", lastRawData.length() > 18 ? lastRawData.substring(0, 18).c_str() : lastRawData.c_str());
+                // データサイズの正確な計算
+                int dataSize = 0;
+                if (lastRawData.length() > 0) {
+                    String data = lastRawData;
+                    while (data.length() > 0) {
+                        int commaPos = data.indexOf(',');
+                        if (commaPos >= 0) {
+                            data = data.substring(commaPos + 1);
+                        } else {
+                            break;
+                        }
+                        dataSize++;
+                    }
+                    dataSize++; // 最後の要素
+                }
+                display->printf("Size: %d bytes", dataSize);
                 
                 display->setCursor(0, 36);
-                display->printf("Keys: %s", lastKeyPresses.length() > 16 ? lastKeyPresses.substring(0, 16).c_str() : lastKeyPresses.c_str());
+                display->printf("HEX: %s", lastHexData.length() > 18 ? 
+                    (lastHexData.substring(0, 18) + "...").c_str() : lastHexData.c_str());
                 
                 display->setCursor(0, 48);
-                display->printf("Text: %s", textBuffer.length() > 16 ? textBuffer.substring(max(0, (int)textBuffer.length() - 16)).c_str() : textBuffer.c_str());
-            } else {
-                // 通常モード：バイトデータ中心表示
-                display->setCursor(0, 0);
-                display->println("Normal [ESC=Detail]");
-                
-                display->setCursor(0, 12);
-                display->printf("Device: %s", isDOIOKeyboard && device_vendor_id == DOIO_VID ? "DOIO KB16" : "Standard");
-                
-                display->setCursor(0, 24);
-                display->printf("HEX Data:");
-                display->setCursor(0, 36);
-                // HEXデータを表示
-                if (lastHexData.length() > 0) {
-                    if (lastHexData.length() > 21) {
-                        display->println(lastHexData.substring(0, 21));
-                        display->setCursor(0, 48);
-                        display->println(lastHexData.substring(21));
-                    } else {
-                        display->println(lastHexData);
-                        display->setCursor(0, 48);
-                        display->printf("Keys: %s", lastKeyPresses.c_str());
-                    }
-                } else {
-                    display->println("No data received");
-                    display->setCursor(0, 48);
-                    display->println("Press any key...");
-                }
+                display->printf("Keys: %s", lastKeyPresses.length() > 16 ? 
+                    (lastKeyPresses.substring(0, 13) + "...").c_str() : lastKeyPresses.c_str());
             }
         }
         
