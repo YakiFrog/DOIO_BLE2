@@ -4,7 +4,7 @@ void EspUsbHost::begin(void) {
   usbTransferSize = 0;
   usbInterfaceSize = 0;
   isReady = false;
-  interval = 20; // デフォルト20ms間隔（負荷軽減）
+  interval = 10; // 10ms間隔（応答性重視）
   lastCheck = 0;
   claim_err = ESP_FAIL;
   
@@ -119,14 +119,14 @@ void EspUsbHost::_clientEventCallback(const usb_host_client_event_msg_t *eventMs
 }
 
 void EspUsbHost::task(void) {
-  // ライブラリイベント処理（タイムアウトを短縮）
-  esp_err_t err = usb_host_lib_handle_events(10, &this->eventFlags); // 10msタイムアウト
+  // ライブラリイベント処理（タイムアウト短縮）
+  esp_err_t err = usb_host_lib_handle_events(1, &this->eventFlags); // 1msタイムアウト（応答性向上）
   if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
     ESP_LOGI("EspUsbHost", "usb_host_lib_handle_events() err=%x eventFlags=%x", err, this->eventFlags);
   }
 
-  // クライアントイベント処理（タイムアウトを短縮）
-  err = usb_host_client_handle_events(this->clientHandle, 10); // 10msタイムアウト
+  // クライアントイベント処理（タイムアウト短縮）
+  err = usb_host_client_handle_events(this->clientHandle, 1); // 1msタイムアウト（応答性向上）
   if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
     ESP_LOGI("EspUsbHost", "usb_host_client_handle_events() err=%x", err);
   }
