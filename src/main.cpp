@@ -20,14 +20,15 @@
 #define DOIO_VID 0xD010
 #define DOIO_PID 0x1601
 
-// 設定（Pythonアナライザーに対応）
+// 設定（OLED表示専用）
 #define MAX_TEXT_LENGTH 50
-#define DEBUG_ENABLED 1
-#define VERBOSE_DEBUG 1  // Pythonのように詳細なバイト情報を表示
+#define DEBUG_ENABLED 0
+#define VERBOSE_DEBUG 0
+#define SERIAL_OUTPUT_DISABLED 1  // シリアル出力を完全無効化
 
 // パフォーマンス設定（最高応答性）
 #define USB_TASK_INTERVAL 0
-#define DISPLAY_UPDATE_INTERVAL 100
+#define DISPLAY_UPDATE_INTERVAL 50  // 50msに短縮
 #define KEY_REPEAT_DELAY 200
 #define KEY_REPEAT_RATE 30
 
@@ -107,28 +108,19 @@ private:
     int lastPressedKeyCol = -1;
     bool displayNeedsUpdate = false;
     
-    // パフォーマンス最適化
-    unsigned long lastDisplayUpdate = 0;
-    
-    // OLED表示用の受信データ
+    // OLED表示用データ
     String lastHexData = "";
     String lastKeyPresses = "";
-    unsigned long lastDataTime = 0;
-    uint8_t lastRawData[16] = {0};  // 生データ保存
-    int lastDataSize = 0;
-    bool detailMode = false;  // 詳細表示モード
+    String lastRawData = "";
+    bool detailMode = false;
+    
+    // パフォーマンス最適化
+    unsigned long lastDisplayUpdate = 0;
 
 public:
     PythonStyleUsbHost(Adafruit_SSD1306* disp) : display(disp) {
         textBuffer = "";
         memset(&report_format, 0, sizeof(report_format));
-        lastHexData = "";
-        lastKeyPresses = "";
-        lastDataTime = 0;
-        memset(lastRawData, 0, sizeof(lastRawData));
-        lastDataSize = 0;
-        detailMode = false;
-        displayNeedsUpdate = true;  // 初期表示のため
     }
     
     // 接続状態確認
@@ -138,7 +130,7 @@ public:
     
     // デバイス接続時の処理
     void onNewDevice(const usb_device_info_t &dev_info) override {
-        #if DEBUG_ENABLED
+        #if !SERIAL_OUTPUT_DISABLED && DEBUG_ENABLED
         Serial.println("\n=== USB キーボード接続 ===");
         
         String manufacturer = getUsbDescString(dev_info.str_desc_manufacturer);
@@ -156,25 +148,32 @@ public:
             isDOIOKeyboard = true;
             isConnected = true;
             report_size = 16;  // DOIO KB16は16バイト固定
+            #if !SERIAL_OUTPUT_DISABLED
             Serial.println("DOIO KB16を検出: 16バイト固定レポートサイズを使用します");
+            #endif
         } else {
             // その他のキーボードも処理対象とする
             isDOIOKeyboard = true;
             isConnected = true;
             report_size = 8;   // 標準キーボードは8バイト
+            #if !SERIAL_OUTPUT_DISABLED
             Serial.println("標準キーボードとして処理します");
+            #endif
         }
         
         displayNeedsUpdate = true;
-        Serial.println("=========================\n");
-        
-        // 初期表示の更新をトリガー
+        // 即座にディスプレイを更新
         updateDisplay();
+        #if !SERIAL_OUTPUT_DISABLED
+        Serial.println("=========================\n");
+        #endif
     }
     
     // デバイス切断時の処理
     void onGone(const usb_host_client_event_msg_t *eventMsg) override {
+        #if !SERIAL_OUTPUT_DISABLED
         Serial.println("キーボードが切断されました");
+        #endif
         isDOIOKeyboard = false;
         isConnected = false;
         has_last_report = false;
@@ -182,6 +181,8 @@ public:
         lastPressedKeyRow = -1;
         lastPressedKeyCol = -1;
         displayNeedsUpdate = true;
+        // 即座にディスプレイを更新
+        updateDisplay();
     }
 
     // キーボード入力処理（Pythonアナライザーアルゴリズムを使用）
@@ -203,6 +204,56 @@ public:
             }
         }
         return "Unknown";
+    }
+    
+    // OLED表示用データを保存
+    void saveDisplayData(const uint8_t* report_data, int data_size, const ReportFormat& format) {
+        // 16進数データを保存
+        lastHexData = "";
+        for (int i = 0; i < data_size; i++) {
+            if (report_data[i] < 16) lastHexData += "0";
+            lastHexData += String(report_data[i], HEX) + " ";
+        }
+        lastHexData.trim();
+        lastHexData.toUpperCase();
+        
+        // 押されているキーを保存
+        lastKeyPresses = "";
+        String pressed_chars = "";
+        
+        if (format.format == "Standard") {
+            for (int i = 0; i < 6; i++) {
+                int idx = format.key_indices[i];
+                if (idx < data_size && report_data[idx] != 0) {
+                    uint8_t keycode = report_data[idx];
+                    String key_str = keycodeToString(keycode, false);
+                    if (pressed_chars.length() > 0) pressed_chars += ", ";
+                    pressed_chars += key_str;
+                }
+            }
+        } else {
+            for (int i = 2; i < data_size; i++) {
+                for (int bit = 0; bit < 8; bit++) {
+                    if (report_data[i] & (1 << bit)) {
+                        uint8_t keycode = (i - 2) * 8 + bit + 4;
+                        String key_str = keycodeToString(keycode, false);
+                        if (pressed_chars.length() > 0) pressed_chars += ", ";
+                        pressed_chars += key_str;
+                    }
+                }
+            }
+        }
+        
+        lastKeyPresses = pressed_chars.length() > 0 ? pressed_chars : "None";
+        
+        // 生データを保存
+        lastRawData = "";
+        for (int i = 0; i < data_size; i++) {
+            lastRawData += String(report_data[i], DEC);
+            if (i < data_size - 1) lastRawData += ",";
+        }
+        
+        displayNeedsUpdate = true;
     }
     
     // Pythonアナライザーのレポート形式解析（DOIO KB16対応修正版）
@@ -251,7 +302,7 @@ public:
             
             report_format_initialized = true;
             
-            #if DEBUG_ENABLED
+            #if !SERIAL_OUTPUT_DISABLED && DEBUG_ENABLED
             Serial.printf("レポート形式を解析: サイズ=%d, 形式=%s\n", 
                          report_format.size, report_format.format.c_str());
             #endif
@@ -279,6 +330,7 @@ public:
         ReportFormat format = analyzeReportFormat(report_data, data_size);
         
         // Pythonアナライザーと同じ詳細なレポート表示
+        #if !SERIAL_OUTPUT_DISABLED
         Serial.println("\n--- HID REPORT ANALYSIS ---");
         
         // バイト列を16進数で表示（Pythonと同一）
@@ -333,6 +385,10 @@ public:
         }
         
         Serial.println("-----------------------------");
+        #endif
+        
+        // OLED表示用データを保存
+        saveDisplayData(report_data, data_size, format);
         
         // 修飾キー解析（DOIO KB16対応）
         bool shift_pressed = false;
@@ -365,7 +421,7 @@ public:
             if (modifier & 0x80) mod_str += "R-GUI ";
         }
         
-        #if DEBUG_ENABLED
+        #if !SERIAL_OUTPUT_DISABLED && DEBUG_ENABLED
         if (mod_str.length() > 0) {
             Serial.printf("修飾キー: %s\n", mod_str.c_str());
         }
@@ -375,11 +431,15 @@ public:
         String pressed_keys = "";
         String pressed_chars = "";
         
+        #if !SERIAL_OUTPUT_DISABLED
         Serial.println("キー検出:");
+        #endif
         
         if (format.format == "Standard") {
             // 標準的な6KROレポート
+            #if !SERIAL_OUTPUT_DISABLED
             Serial.println("  標準6KROフォーマット");
+            #endif
             for (int i = 0; i < 6; i++) {
                 int idx = format.key_indices[i];
                 if (idx < data_size && report_data[idx] != 0) {
@@ -393,8 +453,10 @@ public:
                     if (pressed_chars.length() > 0) pressed_chars += ", ";
                     pressed_chars += key_str;
                     
+                    #if !SERIAL_OUTPUT_DISABLED
                     Serial.printf("    位置[%d]: キーコード=0x%02X, 文字='%s'\n", 
                                  idx, keycode, key_str.c_str());
+                    #endif
                     
                     // 仮想マトリックス位置の計算（a-oマッピング用）
                     processDetectedKey(keycode, key_str, shift_pressed);
@@ -402,7 +464,9 @@ public:
             }
         } else {
             // NKRO形式
+            #if !SERIAL_OUTPUT_DISABLED
             Serial.println("  NKRO形式");
+            #endif
             for (int i = 2; i < data_size; i++) {
                 for (int bit = 0; bit < 8; bit++) {
                     if (report_data[i] & (1 << bit)) {
@@ -415,8 +479,10 @@ public:
                         if (pressed_chars.length() > 0) pressed_chars += ", ";
                         pressed_chars += key_str;
                         
+                        #if !SERIAL_OUTPUT_DISABLED
                         Serial.printf("    ビット[%d:%d]: キーコード=0x%02X, 文字='%s'\n", 
                                      i, bit, keycode, key_str.c_str());
+                        #endif
                         
                         processDetectedKey(keycode, key_str, shift_pressed);
                     }
@@ -424,34 +490,46 @@ public:
             }
         }
         
+        #if !SERIAL_OUTPUT_DISABLED
         if (pressed_keys.length() > 0) {
             Serial.printf("押されているキー: %s\n", pressed_keys.c_str());
             Serial.printf("文字表現: %s\n", pressed_chars.c_str());
         } else {
             Serial.println("押されているキー: なし");
         }
+        #endif
         
         // 変更の検出（Pythonアナライザーと同一）
         if (has_last_report) {
             bool has_changes = false;
+            #if !SERIAL_OUTPUT_DISABLED
             Serial.println("変更検出:");
+            #endif
             for (int i = 0; i < data_size; i++) {
                 if (last_report[i] != report_data[i]) {
                     has_changes = true;
+                    #if !SERIAL_OUTPUT_DISABLED
                     Serial.printf("  バイト%d: 0x%02X (%3d) -> 0x%02X (%3d)\n", 
                                  i, last_report[i], last_report[i], 
                                  report_data[i], report_data[i]);
+                    #endif
                 }
             }
             
             if (!has_changes) {
+                #if !SERIAL_OUTPUT_DISABLED
                 Serial.println("  変更なし（前回と同一）");
+                #endif
             } else {
                 displayNeedsUpdate = true;
+                #if !SERIAL_OUTPUT_DISABLED
                 Serial.println("  ディスプレイ更新をスケジュール");
+                #endif
             }
         } else {
+            #if !SERIAL_OUTPUT_DISABLED
             Serial.println("初回レポート - 前回データなし");
+            #endif
         }
         
         // 現在のレポートを保存
@@ -479,7 +557,7 @@ public:
                 textBuffer = textBuffer.substring(1);
             }
             
-            #if DEBUG_ENABLED
+            #if !SERIAL_OUTPUT_DISABLED && DEBUG_ENABLED
             Serial.printf("DOIO KB16検出: キーコード=0x%02X, 仮想位置=(%d,%d), 文字=%c\n", 
                          keycode, virtualRow, virtualCol, key_char);
             #endif
@@ -500,7 +578,7 @@ public:
                 textBuffer = textBuffer.substring(1);
             }
             
-            #if DEBUG_ENABLED
+            #if !SERIAL_OUTPUT_DISABLED && DEBUG_ENABLED
             Serial.printf("DOIO KB16数字: キーコード=0x%02X, 文字=%c\n", keycode, digit_char);
             #endif
             
@@ -523,13 +601,18 @@ public:
                 textBuffer = textBuffer.substring(1);
             }
             
-            #if DEBUG_ENABLED
+            #if !SERIAL_OUTPUT_DISABLED && DEBUG_ENABLED
             Serial.printf("標準キーボード検出: キーコード=0x%02X, 仮想位置=(%d,%d), 文字=%c\n", 
                          keycode, virtualRow, virtualCol, key_char);
             #endif
             
             displayNeedsUpdate = true;
         } 
+        else if (keycode == 0x29) {
+            // ESCキー - モード切り替え
+            detailMode = !detailMode;
+            displayNeedsUpdate = true;
+        }
         else if (keycode == 0xE1 || keycode == 0xE5) {
             // Shiftキー
             lastPressedKeyRow = 3;
@@ -541,12 +624,6 @@ public:
             // スペースキー
             textBuffer += " ";
             displayNeedsUpdate = true;
-        }
-        else if (keycode == 0x29) {
-            // ESCキー - 表示モード切替
-            detailMode = !detailMode;
-            displayNeedsUpdate = true;
-            Serial.printf("表示モード切替: %s\n", detailMode ? "詳細モード" : "通常モード");
         }
         else {
             // その他のキー
@@ -565,6 +642,7 @@ public:
         if (transfer->actual_num_bytes == 0) return;
         
         // Pythonアナライザーと同じように全ての受信データを詳細表示
+        #if !SERIAL_OUTPUT_DISABLED
         Serial.println("\n╔═══════════════════════════════╗");
         Serial.println("║     USB RAW DATA RECEIVED     ║");
         Serial.println("╚═══════════════════════════════╝");
@@ -633,37 +711,13 @@ public:
         
         Serial.println("─────────────────────────────────");
         Serial.println("╚═══════════════════════════════╝\n");
-        
-        // OLED表示用にデータを保存
-        lastHexData = "";
-        lastDataSize = min(transfer->actual_num_bytes, 16);
-        memcpy(lastRawData, transfer->data_buffer, lastDataSize);
-        
-        for (int i = 0; i < min(transfer->actual_num_bytes, 8); i++) {
-            if (transfer->data_buffer[i] < 16) lastHexData += "0";
-            lastHexData += String(transfer->data_buffer[i], HEX);
-            if (i < min(transfer->actual_num_bytes, 8) - 1) lastHexData += " ";
-        }
-        lastHexData.toUpperCase();
-        lastDataTime = millis();
-        
-        // 押されたキーを保存
-        lastKeyPresses = "";
-        for (int i = 2; i < min(transfer->actual_num_bytes, 8); i++) {
-            if (transfer->data_buffer[i] != 0) {
-                String key_str = keycodeToString(transfer->data_buffer[i], false);
-                if (lastKeyPresses.length() > 0) lastKeyPresses += ",";
-                lastKeyPresses += key_str;
-            }
-        }
-        
-        displayNeedsUpdate = true;
+        #endif
         
         // 実際のサイズでレポートを処理
         processRawReportData(transfer->data_buffer, transfer->actual_num_bytes);
     }
     
-    // ディスプレイ更新処理（受信データのバイト表示）
+    // ディスプレイ更新処理（リアルタイムバイトデータ表示）
     void updateDisplay() {
         if (!display || !displayInitialized) return;
         
@@ -676,103 +730,61 @@ public:
         display->setTextSize(1);
         display->setTextColor(SSD1306_WHITE);
         
-        if (!detailMode) {
-            // 通常モード: 概要表示
+        if (!isConnected) {
+            // 接続待ち表示
             display->setCursor(0, 0);
-            display->println("DOIO Byte Analyzer");
-            
-            // 接続状態
-            display->setCursor(0, 10);
-            if (isConnected) {
-                display->print("Connected");
-                // データ受信からの経過時間
-                if (lastDataTime > 0) {
-                    display->setCursor(70, 10);
-                    display->print((now - lastDataTime) / 1000);
-                    display->print("s ago");
-                }
-            } else {
-                display->print("Waiting for device...");
-            }
-            
-            // 最後に受信したHEXデータ
-            display->setCursor(0, 22);
-            display->print("HEX: ");
-            if (lastHexData.length() > 0) {
-                display->print(lastHexData);
-            } else {
-                display->print("No data");
-            }
-            
-            // 押されたキーの表示
-            display->setCursor(0, 34);
-            display->print("Key: ");
-            if (lastKeyPresses.length() > 0) {
-                String keyDisplay = lastKeyPresses;
-                if (keyDisplay.length() > 18) {
-                    keyDisplay = keyDisplay.substring(0, 15) + "...";
-                }
-                display->print(keyDisplay);
-            } else {
-                display->print("None");
-            }
-            
-            // バイト詳細（最初の3バイト）
-            if (lastDataSize > 0) {
-                display->setCursor(0, 46);
-                display->print("Bytes: ");
-                for (int i = 0; i < min(lastDataSize, 3); i++) {
-                    display->printf("%02X ", lastRawData[i]);
-                }
-            }
-            
-            // モード切替ヒント
-            display->setCursor(0, 56);
-            display->print("Press ESC for detail");
-            
+            display->println("DOIO KB16 Analyzer");
+            display->setCursor(0, 15);
+            display->println("Status: No Device");
+            display->setCursor(0, 30);
+            display->println("Connect USB keyboard");
+            display->setCursor(0, 45);
+            display->println("to start analysis");
         } else {
-            // 詳細モード: バイト詳細表示
-            display->setCursor(0, 0);
-            display->println("Byte Detail Mode");
-            
-            if (lastDataSize > 0) {
-                // 8バイトまで表示（4バイト x 2行）
-                for (int row = 0; row < 2; row++) {
-                    display->setCursor(0, 12 + row * 12);
-                    for (int col = 0; col < 4; col++) {
-                        int idx = row * 4 + col;
-                        if (idx < lastDataSize) {
-                            display->printf("%02X ", lastRawData[idx]);
-                        } else {
-                            display->print("-- ");
-                        }
-                    }
-                }
+            if (detailMode) {
+                // 詳細モード：バイト詳細表示
+                display->setCursor(0, 0);
+                display->println("Detail [ESC=Normal]");
                 
-                // 解釈表示
-                display->setCursor(0, 38);
-                display->print("Mod:");
-                if (lastDataSize > 1) {
-                    display->printf("%02X", lastRawData[isDOIOKeyboard ? 1 : 0]);
-                }
+                display->setCursor(0, 12);
+                display->printf("HEX: %s", lastHexData.length() > 18 ? lastHexData.substring(0, 18).c_str() : lastHexData.c_str());
                 
-                display->setCursor(40, 38);
-                display->print("Key1:");
-                if (lastDataSize > 2) {
-                    display->printf("%02X", lastRawData[2]);
-                }
+                display->setCursor(0, 24);
+                display->printf("RAW: %s", lastRawData.length() > 18 ? lastRawData.substring(0, 18).c_str() : lastRawData.c_str());
                 
-                display->setCursor(0, 50);
-                display->printf("Size:%d Type:%s", lastDataSize, 
-                               isDOIOKeyboard ? "DOIO" : "STD");
+                display->setCursor(0, 36);
+                display->printf("Keys: %s", lastKeyPresses.length() > 16 ? lastKeyPresses.substring(0, 16).c_str() : lastKeyPresses.c_str());
+                
+                display->setCursor(0, 48);
+                display->printf("Text: %s", textBuffer.length() > 16 ? textBuffer.substring(max(0, (int)textBuffer.length() - 16)).c_str() : textBuffer.c_str());
             } else {
-                display->setCursor(0, 20);
-                display->print("No data received");
+                // 通常モード：バイトデータ中心表示
+                display->setCursor(0, 0);
+                display->println("Normal [ESC=Detail]");
+                
+                display->setCursor(0, 12);
+                display->printf("Device: %s", isDOIOKeyboard && device_vendor_id == DOIO_VID ? "DOIO KB16" : "Standard");
+                
+                display->setCursor(0, 24);
+                display->printf("HEX Data:");
+                display->setCursor(0, 36);
+                // HEXデータを表示
+                if (lastHexData.length() > 0) {
+                    if (lastHexData.length() > 21) {
+                        display->println(lastHexData.substring(0, 21));
+                        display->setCursor(0, 48);
+                        display->println(lastHexData.substring(21));
+                    } else {
+                        display->println(lastHexData);
+                        display->setCursor(0, 48);
+                        display->printf("Keys: %s", lastKeyPresses.c_str());
+                    }
+                } else {
+                    display->println("No data received");
+                    display->setCursor(0, 48);
+                    display->println("Press any key...");
+                }
             }
-            
-            // モード切替ヒント
-            display->setCursor(0, 56);
-            display->print("Press ESC for normal");
         }
         
         display->display();
@@ -782,6 +794,14 @@ public:
     
     // 定期更新処理
     void periodicUpdate() {
+        // 2秒毎に強制更新
+        static unsigned long lastForceUpdate = 0;
+        unsigned long now = millis();
+        if (now - lastForceUpdate > 2000) {
+            displayNeedsUpdate = true;
+            lastForceUpdate = now;
+        }
+        
         updateDisplay();
     }
 };
@@ -798,6 +818,7 @@ void showStartupMessage();
 void setup() {
     setCpuFrequencyMhz(240);
     
+    #if !SERIAL_OUTPUT_DISABLED
     Serial.begin(115200);
     for(int i = 0; i < 50 && !Serial; i++) {
         delay(100);
@@ -808,38 +829,49 @@ void setup() {
     Serial.println("Complete Python Algorithm Port");
     Serial.printf("CPU Frequency: %d MHz\n", getCpuFrequencyMhz());
     Serial.println("=================================");
+    #endif
     
     // I2C初期化
+    #if !SERIAL_OUTPUT_DISABLED
     Serial.printf("Initializing I2C: SDA=%d, SCL=%d\n", SDA_PIN, SCL_PIN);
+    #endif
     Wire.begin(SDA_PIN, SCL_PIN);
     Wire.setClock(100000);
     delay(500);
     
     // ディスプレイ初期化
     if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+        #if !SERIAL_OUTPUT_DISABLED
         Serial.println("SSD1306初期化に失敗しました");
+        #endif
         while (true) delay(1000);
     }
     
+    #if !SERIAL_OUTPUT_DISABLED
     Serial.println("SSD1306初期化完了");
+    #endif
     displayInitialized = true;
     
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
-    display.println("Byte Analyzer");
-    display.println("Ready");
+    display.println("DOIO KB16 Analyzer");
+    display.println("OLED Display Mode");
     display.println("");
-    display.println("Check Serial Monitor");
-    display.println("for detailed output");
+    display.println("Waiting for USB");
+    display.println("keyboard...");
+    display.println("");
+    display.println("ESC = Mode Switch");
     display.display();
     
     // USBホスト初期化
     usbHost = new PythonStyleUsbHost(&display);
     usbHost->begin();
     
+    #if !SERIAL_OUTPUT_DISABLED
     Serial.println("System initialized. Waiting for keyboard...");
+    #endif
 }
 
 void loop() {
