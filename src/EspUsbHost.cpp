@@ -71,7 +71,16 @@ void EspUsbHost::_clientEventCallback(const usb_host_client_event_msg_t *eventMs
       } else {
         usbHost->device_vendor_id = dev_desc->idVendor;
         usbHost->device_product_id = dev_desc->idProduct;
-        ESP_LOGI("EspUsbHost", "VID: 0x%04X, PID: 0x%04X", usbHost->device_vendor_id, usbHost->device_product_id);
+        ESP_LOGI("EspUsbHost", "Device Info: VID=0x%04X, PID=0x%04X, Class=0x%02X, SubClass=0x%02X", 
+                 usbHost->device_vendor_id, usbHost->device_product_id, 
+                 dev_desc->bDeviceClass, dev_desc->bDeviceSubClass);
+        
+        // DOIO KB16の特別なチェック
+        if (usbHost->device_vendor_id == 0xD010 && usbHost->device_product_id == 0x1601) {
+          ESP_LOGI("EspUsbHost", "*** DOIO KB16 DETECTED! ***");
+        } else {
+          ESP_LOGI("EspUsbHost", "Standard HID device detected");
+        }
       }
 
       // デバイス情報を通知
@@ -233,6 +242,19 @@ void EspUsbHost::setHIDLocal(hid_local_enum_t code) {
   hidLocal = code;
 }
 
+void EspUsbHost::processRawReport16Bytes(const uint8_t* data) {
+  // デフォルトの16バイトレポート処理（継承クラスでオーバーライド）
+  ESP_LOGI("EspUsbHost", "Default 16-byte report processing");
+  
+  // 16進数でログ出力
+  String hex_data = "";
+  for (int i = 0; i < 16; i++) {
+    if (data[i] < 16) hex_data += "0";
+    hex_data += String(data[i], HEX) + " ";
+  }
+  ESP_LOGI("EspUsbHost", "16-byte data: %s", hex_data.c_str());
+}
+
 void EspUsbHost::_printPcapText(const char *title, uint16_t function, uint8_t direction, uint8_t endpoint, uint8_t type, uint8_t size, uint8_t stage, const uint8_t *data) {
   // PCAPテキスト出力（デバッグ用）
   String data_str = "";
@@ -257,27 +279,69 @@ void EspUsbHost::_onReceiveControl(usb_transfer_t *transfer) {
 void EspUsbHost::_onReceive(usb_transfer_t *transfer) {
   EspUsbHost *usbHost = (EspUsbHost *)transfer->context;
   
-  // HIDクラスのデバイスかチェック
-  if (transfer->actual_num_bytes >= 8) {
-    static hid_keyboard_report_t last_report = {};
+  // 受信データサイズをチェック
+  if (transfer->actual_num_bytes > 0) {
+    ESP_LOGI("EspUsbHost", "*** USB DATA RECEIVED *** Bytes: %d", transfer->actual_num_bytes);
     
-    // レポートデータが変化した場合のみ処理
-    if (memcmp(&last_report, transfer->data_buffer, sizeof(last_report))) {
-      hid_keyboard_report_t report = {};
-      report.modifier = transfer->data_buffer[0];
-      report.reserved = transfer->data_buffer[1];
-      report.keycode[0] = transfer->data_buffer[2];
-      report.keycode[1] = transfer->data_buffer[3];
-      report.keycode[2] = transfer->data_buffer[4];
-      report.keycode[3] = transfer->data_buffer[5];
-      report.keycode[4] = transfer->data_buffer[6];
-      report.keycode[5] = transfer->data_buffer[7];
-
-      // キーボード処理を呼び出し
-      usbHost->onKeyboard(report, last_report);
-      
-      memcpy(&last_report, &report, sizeof(last_report));
+    // 受信データをログ出力（16進数）
+    String hex_data = "";
+    for (int i = 0; i < transfer->actual_num_bytes; i++) {
+      if (transfer->data_buffer[i] < 16) hex_data += "0";
+      hex_data += String(transfer->data_buffer[i], HEX) + " ";
     }
+    ESP_LOGI("EspUsbHost", "Raw data: %s", hex_data.c_str());
+    
+    // VID/PIDチェック
+    ESP_LOGI("EspUsbHost", "Device: VID=0x%04X, PID=0x%04X", 
+             usbHost->device_vendor_id, usbHost->device_product_id);
+    
+    // DOIO KB16の16バイトレポート処理
+    if (transfer->actual_num_bytes == 16) {
+      // 16バイト全体をチェック
+      static uint8_t last_16byte_report[16] = {0};
+      
+      // データが変化した場合のみ処理
+      if (memcmp(last_16byte_report, transfer->data_buffer, 16) != 0) {
+        ESP_LOGI("EspUsbHost", "DOIO KB16 16-byte report detected and changed");
+        
+        // Pythonアナライザーと同様の16バイトレポート解析
+        usbHost->processRawReport16Bytes(transfer->data_buffer);
+        
+        // 現在のレポートを保存
+        memcpy(last_16byte_report, transfer->data_buffer, 16);
+      }
+    }
+    // 標準8バイトHIDレポート処理
+    else if (transfer->actual_num_bytes >= 8) {
+      static hid_keyboard_report_t last_report = {};
+      
+      // レポートデータが変化した場合のみ処理
+      if (memcmp(&last_report, transfer->data_buffer, sizeof(last_report))) {
+        ESP_LOGI("EspUsbHost", "Standard 8-byte HID report detected");
+        
+        hid_keyboard_report_t report = {};
+        report.modifier = transfer->data_buffer[0];
+        report.reserved = transfer->data_buffer[1];
+        report.keycode[0] = transfer->data_buffer[2];
+        report.keycode[1] = transfer->data_buffer[3];
+        report.keycode[2] = transfer->data_buffer[4];
+        report.keycode[3] = transfer->data_buffer[5];
+        report.keycode[4] = transfer->data_buffer[6];
+        report.keycode[5] = transfer->data_buffer[7];
+
+        // キーボード処理を呼び出し
+        usbHost->onKeyboard(report, last_report);
+        
+        memcpy(&last_report, &report, sizeof(last_report));
+      }
+    } else {
+      ESP_LOGI("EspUsbHost", "Unknown report size: %d bytes", transfer->actual_num_bytes);
+    }
+    
+    // 継承クラスのonReceiveメソッドを呼び出し
+    usbHost->onReceive(transfer);
+  } else {
+    ESP_LOGI("EspUsbHost", "Received empty transfer");
   }
 }
 
@@ -317,17 +381,20 @@ void EspUsbHost::onConfig(const uint8_t bDescriptorType, const uint8_t *p) {
         
         // HIDインターフェースの場合はクレーム
         if (_bInterfaceClass == USB_CLASS_HID) {
+          ESP_LOGI("EspUsbHost", "Found HID interface! Attempting to claim...");
           esp_err_t err = usb_host_interface_claim(this->clientHandle, this->deviceHandle, _bInterfaceNumber, 0);
           if (err != ESP_OK) {
-            ESP_LOGI("EspUsbHost", "usb_host_interface_claim() err=%x", err);
+            ESP_LOGI("EspUsbHost", "usb_host_interface_claim() FAILED err=%x", err);
             this->claim_err = err;
             return;
           } else {
-            ESP_LOGI("EspUsbHost", "usb_host_interface_claim() ESP_OK Interface=%d", _bInterfaceNumber);
+            ESP_LOGI("EspUsbHost", "usb_host_interface_claim() SUCCESS Interface=%d", _bInterfaceNumber);
             this->usbInterface[this->usbInterfaceSize] = _bInterfaceNumber;
             this->usbInterfaceSize++;
             this->claim_err = ESP_OK;
           }
+        } else {
+          ESP_LOGI("EspUsbHost", "Non-HID interface detected: Class=0x%02X", _bInterfaceClass);
         }
       }
       break;
@@ -344,8 +411,10 @@ void EspUsbHost::onConfig(const uint8_t bDescriptorType, const uint8_t *p) {
             (ep_desc->bmAttributes & USB_BM_ATTRIBUTES_XFERTYPE_MASK) == USB_BM_ATTRIBUTES_XFER_INT &&
             (ep_desc->bEndpointAddress & USB_B_ENDPOINT_ADDRESS_EP_DIR_MASK)) {
           
+          ESP_LOGI("EspUsbHost", "Setting up HID interrupt endpoint...");
+          
           if (this->claim_err != ESP_OK) {
-            ESP_LOGI("EspUsbHost", "Skipping endpoint due to claim error");
+            ESP_LOGI("EspUsbHost", "Skipping endpoint due to claim error: %x", this->claim_err);
             return;
           }
 
@@ -353,10 +422,10 @@ void EspUsbHost::onConfig(const uint8_t bDescriptorType, const uint8_t *p) {
           esp_err_t err = usb_host_transfer_alloc(ep_desc->wMaxPacketSize + 1, 0, &this->usbTransfer[this->usbTransferSize]);
           if (err != ESP_OK) {
             this->usbTransfer[this->usbTransferSize] = NULL;
-            ESP_LOGI("EspUsbHost", "usb_host_transfer_alloc() err=%x", err);
+            ESP_LOGI("EspUsbHost", "usb_host_transfer_alloc() FAILED err=%x", err);
             return;
           } else {
-            ESP_LOGI("EspUsbHost", "usb_host_transfer_alloc() ESP_OK size=%d", ep_desc->wMaxPacketSize + 1);
+            ESP_LOGI("EspUsbHost", "usb_host_transfer_alloc() SUCCESS size=%d", ep_desc->wMaxPacketSize + 1);
           }
 
           // 転送設定
@@ -369,7 +438,10 @@ void EspUsbHost::onConfig(const uint8_t bDescriptorType, const uint8_t *p) {
           this->isReady = true;
           this->usbTransferSize++;
           
-          ESP_LOGI("EspUsbHost", "HID endpoint configured successfully");
+          ESP_LOGI("EspUsbHost", "HID endpoint configured successfully! MaxPacket=%d, Interval=%d", 
+                   ep_desc->wMaxPacketSize, ep_desc->bInterval);
+        } else {
+          ESP_LOGI("EspUsbHost", "Skipping non-HID interrupt endpoint");
         }
       }
       break;

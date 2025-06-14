@@ -95,6 +95,7 @@ public:
   void updateKB16KeyState(uint8_t row, uint8_t col, bool pressed);
   bool getKB16KeyState(uint8_t row, uint8_t col);
   virtual void onKB16KeyStateChanged(uint8_t row, uint8_t col, bool pressed){};
+  virtual void processRawReport16Bytes(const uint8_t* data);
 
   virtual uint8_t getKeycodeToAscii(uint8_t keycode, uint8_t shift);
   virtual void onKeyboard(hid_keyboard_report_t report, hid_keyboard_report_t last_report);
