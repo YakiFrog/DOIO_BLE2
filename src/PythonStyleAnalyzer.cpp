@@ -457,7 +457,7 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     String display_chars = pressed_chars.length() > 0 ? pressed_chars : "None";
     updateDisplayWithKeys(display_hex, display_keys, display_chars, shift_pressed);
     
-    // BLE送信処理（変更があった場合のみ）
+    // BLE送信処理（解析済み文字を直接送信）
     if (bleKeyboard && bleKeyboard->isConnected()) {
         // 前回のレポートと比較して変更があった場合のみ送信
         bool has_changes = false;
@@ -472,50 +472,36 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
             has_changes = true; // 最初のレポート
         }
         
-        if (has_changes) {
-            // 解析結果に基づいて適切な文字をBLEに送信
-            if (format.format == "Standard" || format.format == "NKRO") {
-                // 押されているキーを処理
-                int max_key_index = (format.size == 16) ? 16 : 8;
-                for (int i = 2; i < max_key_index; i++) {
-                    if (i < format.size && report_data[i] != 0) {
-                        uint8_t keycode = report_data[i];
-                        
-                        // 前回のレポートに同じキーがあるかチェック
-                        bool key_was_pressed = false;
-                        if (has_last_report) {
-                            for (int j = 2; j < max_key_index; j++) {
-                                if (j < data_size && last_report[j] == keycode) {
-                                    key_was_pressed = true;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        // 新しく押されたキーのみを送信
-                        if (!key_was_pressed) {
-                            // キーコードを文字に変換してBLE送信
-                            String key_str = keycodeToString(keycode, shift_pressed);
-                            
-                            // 実際の文字のみを送信（制御キーでない場合）
-                            if (key_str.length() == 1 && key_str != " ") {
-                                bleKeyboard->write(key_str.c_str()[0]);
-                                Serial.printf("BLE送信: '%s' (keycode=0x%02X)\n", key_str.c_str(), keycode);
-                            } else if (key_str == " ") {
-                                bleKeyboard->write(' ');
-                                Serial.println("BLE送信: スペース");
-                            } else if (key_str == "\n") {
-                                bleKeyboard->write('\n');
-                                Serial.println("BLE送信: Enter");
-                            } else if (key_str == "\t") {
-                                bleKeyboard->write('\t');
-                                Serial.println("BLE送信: Tab");
-                            } else if (key_str == "Backspace") {
-                                bleKeyboard->write(8);  // ASCII backspace
-                                Serial.println("BLE送信: Backspace");
-                            }
-                        }
-                    }
+        if (has_changes && pressed_chars.length() > 0) {
+            // pressed_chars（解析済みの文字）をカンマで分割して送信
+            String chars_to_send = pressed_chars;
+            
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("BLE送信対象文字列: '%s'\n", chars_to_send.c_str());
+            #endif
+            
+            // カンマ区切りで文字を分割して送信
+            int start = 0;
+            int comma_pos = 0;
+            
+            while ((comma_pos = chars_to_send.indexOf(", ", start)) != -1) {
+                String single_char = chars_to_send.substring(start, comma_pos);
+                single_char.trim();
+                
+                if (single_char.length() > 0) {
+                    sendSingleCharacter(single_char);
+                }
+                
+                start = comma_pos + 2;  // ", "の長さ分進める
+            }
+            
+            // 最後の文字を処理
+            if (start < chars_to_send.length()) {
+                String single_char = chars_to_send.substring(start);
+                single_char.trim();
+                
+                if (single_char.length() > 0) {
+                    sendSingleCharacter(single_char);
                 }
             }
         }
@@ -546,6 +532,41 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     // 現在のレポートを保存（Pythonと同じ）
     memcpy(last_report, report_data, data_size);
     has_last_report = true;
+}
+
+// BLE送信用のヘルパー関数
+void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
+    if (!bleKeyboard || !bleKeyboard->isConnected()) {
+        return;
+    }
+    
+    #if SERIAL_OUTPUT_ENABLED
+    Serial.printf("BLE送信: '%s'\n", character.c_str());
+    #endif
+    
+    // 特殊文字の処理
+    if (character == "Enter" || character == "\n") {
+        bleKeyboard->write('\n');
+        Serial.println("  -> Enter送信");
+    } else if (character == "Tab" || character == "\t") {
+        bleKeyboard->write('\t');
+        Serial.println("  -> Tab送信");
+    } else if (character == "Space" || character == " ") {
+        bleKeyboard->write(' ');
+        Serial.println("  -> Space送信");
+    } else if (character == "Backspace") {
+        bleKeyboard->write(8);  // ASCII backspace
+        Serial.println("  -> Backspace送信");
+    } else if (character.length() == 1) {
+        // 単一文字の場合はそのまま送信
+        char c = character.charAt(0);
+        bleKeyboard->write(c);
+        Serial.printf("  -> 文字 '%c' (0x%02X) 送信\n", c, (uint8_t)c);
+    } else {
+        // 複数文字や特殊キーの場合は文字列として送信
+        bleKeyboard->print(character);
+        Serial.printf("  -> 文字列 '%s' 送信\n", character.c_str());
+    }
 }
 
 // デバイス接続時の処理（元のプログラムと同じ処理を追加）

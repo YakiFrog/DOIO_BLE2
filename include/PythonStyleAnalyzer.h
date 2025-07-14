@@ -104,6 +104,9 @@ private:
     // Pythonのpretty_print_report関数を完全移植
     void prettyPrintReport(const uint8_t* report_data, int data_size);
     
+    // BLE送信用のヘルパー関数
+    void sendSingleCharacter(const String& character);
+    
     // EspUsbHostからの継承メソッド
     void onNewDevice(const usb_device_info_t &dev_info) override;
     void onGone(const usb_host_client_event_msg_t *eventMsg) override;
