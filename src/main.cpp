@@ -165,7 +165,7 @@ private:
     }
     
     // キー押下時のディスプレイ更新
-    void updateDisplayWithKeys(const String& hexData, const String& keyNames, const String& characters) {
+    void updateDisplayWithKeys(const String& hexData, const String& keyNames, const String& characters, bool shiftPressed = false) {
         if (!display) return;
         
         // 表示データを更新
@@ -205,23 +205,30 @@ private:
                 byteCount++;
             }
             
-            // 8バイトずつ2行で表示（スペース込みで21文字以内）
+            // 7バイトずつ表示（画面幅に最適化）
             String line1 = "";
             String line2 = "";
+            String line3 = "";
             
             for (int i = 0; i < byteCount; i++) {
-                if (i < 8) {
+                if (i < 7) {
                     if (line1.length() > 0) line1 += " ";
                     line1 += bytes[i];
-                } else {
+                } else if (i < 14) {
                     if (line2.length() > 0) line2 += " ";
                     line2 += bytes[i];
+                } else {
+                    if (line3.length() > 0) line3 += " ";
+                    line3 += bytes[i];
                 }
             }
             
             display->println(line1);
             if (line2.length() > 0) {
                 display->println(line2);
+            }
+            if (line3.length() > 0) {
+                display->println(line3);
             }
         } else {
             display->println("No HEX data");
@@ -251,17 +258,39 @@ private:
             display->println("None");
         }
         
+        // Shiftキー状態を右下に表示
+        display->setCursor(105, 56);  // 右下の位置（ONの場合は少し左に）
+        if (shiftPressed) {
+            display->print("ON");
+        } else {
+            display->print("OFF");
+        }
+        
         display->display();
     }
     
     // Pythonのkeycode_to_string関数を完全移植
     String keycodeToString(uint8_t keycode, bool shift = false) {
+        #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+        Serial.printf("    keycodeToString呼び出し: keycode=0x%02X, shift=%s\n", keycode, shift ? "true" : "false");
+        #endif
+        
         for (int i = 0; i < sizeof(KEYCODE_MAP) / sizeof(KeycodeMapping); i++) {
             if (KEYCODE_MAP[i].keycode == keycode) {
-                return shift ? KEYCODE_MAP[i].shifted : KEYCODE_MAP[i].normal;
+                String result = shift ? KEYCODE_MAP[i].shifted : KEYCODE_MAP[i].normal;
+                #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+                Serial.printf("    マッピング発見: 0x%02X -> normal='%s', shifted='%s', result='%s'\n", 
+                             keycode, KEYCODE_MAP[i].normal, KEYCODE_MAP[i].shifted, result.c_str());
+                #endif
+                return result;
             }
         }
-        return "不明(0x" + String(keycode, HEX) + ")";
+        
+        String unknown = "不明(0x" + String(keycode, HEX) + ")";
+        #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+        Serial.printf("    マッピング未発見: 0x%02X -> %s\n", keycode, unknown.c_str());
+        #endif
+        return unknown;
     }
     
     // Pythonの_analyze_report_format関数を完全移植
@@ -270,30 +299,23 @@ private:
             // 最初のレポートから形式を推測（Pythonと同じロジック）
             report_format.size = data_size;
             
-            if (is_doio_kb16 && data_size == 16) {
-                // DOIO KB16: 16バイトレポート（元のプログラムと同じ）
-                report_format.modifier_index = 1;  // バイト1が修飾キー（通常は0x00）
-                report_format.reserved_index = 0;  // バイト0はDOIO固有フィールド（0x06など）
-                report_format.key_indices[0] = 2;  // バイト2からキーコード開始
-                report_format.key_indices[1] = 3;
-                report_format.key_indices[2] = 4;
-                report_format.key_indices[3] = 5;
-                report_format.key_indices[4] = 6;
-                report_format.key_indices[5] = 7;
-                // 16バイトレポートでは8-15バイトも使用可能
-                report_format.format = "DOIO_KB16_16BYTE";
-            } else {
-                // 標準キーボード: 8バイトレポート
+            if (data_size == 8) {
+                // 8バイトレポート：標準キーボード
                 report_format.modifier_index = 0;  // バイト0が修飾キー
                 report_format.reserved_index = 1;  // バイト1は予約
-                report_format.key_indices[0] = 2;  // バイト2からキーコード開始
-                report_format.key_indices[1] = 3;
-                report_format.key_indices[2] = 4;
-                report_format.key_indices[3] = 5;
-                report_format.key_indices[4] = 6;
-                report_format.key_indices[5] = 7;
-                report_format.format = "Standard";
+            } else {
+                // 16バイト等：DOIO KB16など
+                report_format.modifier_index = 1;  // 修飾キーは1バイト目
+                report_format.reserved_index = 0;  // 0バイト目は予約または無視
             }
+            
+            report_format.key_indices[0] = 2;  // 標準的な6KROレイアウト
+            report_format.key_indices[1] = 3;
+            report_format.key_indices[2] = 4;
+            report_format.key_indices[3] = 5;
+            report_format.key_indices[4] = 6;
+            report_format.key_indices[5] = 7;
+            report_format.format = "Standard";
             
             // NKROの検出（Pythonと同じ）
             int non_zero_count = 0;
@@ -314,6 +336,9 @@ private:
             #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
             Serial.printf("レポート形式解析完了: サイズ=%d, 形式=%s\n", 
                          report_format.size, report_format.format.c_str());
+            Serial.printf("modifier_index=%d, 修飾キー処理: %s\n", 
+                         report_format.modifier_index, 
+                         (report_format.format == "Standard" || report_format.format == "NKRO") ? "有効" : "無効");
             #endif
         }
         
@@ -343,6 +368,8 @@ private:
         
         // 修飾キー（Pythonと同じロジック）
         bool shift_pressed = false;
+        
+        // Pythonと同じ：StandardとNKROの場合のみ修飾キー処理
         if (format.format == "Standard" || format.format == "NKRO") {
             uint8_t modifier = report_data[format.modifier_index];
             String mod_str = "";
@@ -363,71 +390,37 @@ private:
             
             #if SERIAL_OUTPUT_ENABLED
             Serial.printf("修飾キー: %s\n", mod_str.length() > 0 ? mod_str.c_str() : "なし");
+            Serial.printf("shift_pressed設定: %s\n", shift_pressed ? "true" : "false");
             #endif
-        } else if (format.format == "DOIO_KB16_16BYTE") {
-            // DOIO KB16では修飾キーフィールドは通常0x00
-            uint8_t modifier = report_data[format.modifier_index];
-            if (modifier != 0x00) {
-                #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
-                Serial.printf("DOIO KB16: 予期しない修飾キー値=0x%02X\n", modifier);
-                #endif
-            } else {
-                #if SERIAL_OUTPUT_ENABLED
-                Serial.println("修飾キー: なし (DOIO KB16)");
-                #endif
-            }
+        } else {
+            // DOIO KB16等では修飾キー処理を完全にスキップ（Pythonと同じ）
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("修飾キー: 処理なし (%s)\n", format.format.c_str());
+            Serial.printf("shift_pressed設定: false (固定)\n");
+            #endif
         }
+        
+        #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+        Serial.printf("最終shift_pressed状態: %s\n", shift_pressed ? "true" : "false");
+        Serial.printf("レポート形式: %s\n", format.format.c_str());
+        #endif
         
         // 押されているキー（Pythonと同じロジック）
         String pressed_keys = "";
         String pressed_chars = "";
         
-        if (format.format == "DOIO_KB16_16BYTE") {
-            // DOIO KB16: 16バイトレポート - 2-15バイトすべてをチェック
-            #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
-            Serial.println("DOIO KB16 16バイトレポート解析:");
-            Serial.printf("  バイト0 (固有): 0x%02X\n", report_data[0]);
-            Serial.printf("  バイト1 (修飾): 0x%02X\n", report_data[1]);
-            #endif
-            
-            for (int i = 2; i < data_size && i < 16; i++) {  // 明示的に16バイト上限を設定
-                if (report_data[i] != 0) {
-                    uint8_t keycode = report_data[i];
-                    if (pressed_keys.length() > 0) pressed_keys += ", ";
-                    pressed_keys += "0x" + String(keycode, HEX);
-                    
-                    // キーコードを文字に変換
-                    String key_str = keycodeToString(keycode, shift_pressed);
-                    if (pressed_chars.length() > 0) pressed_chars += ", ";
-                    pressed_chars += key_str;
-                    
-                    #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
-                    Serial.printf("  バイト%d: 0x%02X -> %s\n", i, keycode, key_str.c_str());
-                    #endif
-                }
-            }
-        } else if (format.format == "Standard") {
-            // 標準的な6KROレポート
-            for (int i = 0; i < 6; i++) {
-                int idx = format.key_indices[i];
-                if (idx < data_size && report_data[idx] != 0) {
-                    uint8_t keycode = report_data[idx];
-                    if (pressed_keys.length() > 0) pressed_keys += ", ";
-                    pressed_keys += "0x" + String(keycode, HEX);
-                    
-                    // キーコードを文字に変換
-                    String key_str = keycodeToString(keycode, shift_pressed);
-                    if (pressed_chars.length() > 0) pressed_chars += ", ";
-                    pressed_chars += key_str;
-                }
-            }
-        } else {
-            // NKRO形式
-            for (int i = 2; i < data_size; i++) {
-                uint8_t b = report_data[i];
-                for (int bit = 0; bit < 8; bit++) {
-                    if (b & (1 << bit)) {
-                        uint8_t keycode = (i - 2) * 8 + bit + 4;
+        if (format.format == "Standard" || format.format == "NKRO") {
+            if (format.format == "Standard") {
+                // 標準的な6KROレポート（DOIO KB16の場合は16バイトのStandardとして処理）
+                #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+                Serial.printf("Standard形式解析 (サイズ=%d, modifier_index=%d):\n", format.size, format.modifier_index);
+                #endif
+                
+                // DOIO KB16の場合は16バイトすべてをチェック
+                int max_key_index = (format.size == 16) ? 16 : 8;
+                for (int i = 2; i < max_key_index; i++) {
+                    if (i < format.size && report_data[i] != 0) {
+                        uint8_t keycode = report_data[i];
                         if (pressed_keys.length() > 0) pressed_keys += ", ";
                         pressed_keys += "0x" + String(keycode, HEX);
                         
@@ -435,9 +428,43 @@ private:
                         String key_str = keycodeToString(keycode, shift_pressed);
                         if (pressed_chars.length() > 0) pressed_chars += ", ";
                         pressed_chars += key_str;
+                        
+                        #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+                        Serial.printf("  バイト%d: 0x%02X -> %s (shift=%s)\n", i, keycode, key_str.c_str(), shift_pressed ? "true" : "false");
+                        #endif
+                    }
+                }
+            } else {
+                // NKRO形式
+                #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+                Serial.println("NKRO形式解析:");
+                #endif
+                
+                for (int i = 2; i < format.size; i++) {
+                    uint8_t b = report_data[i];
+                    for (int bit = 0; bit < 8; bit++) {
+                        if (b & (1 << bit)) {
+                            uint8_t keycode = (i - 2) * 8 + bit + 4;
+                            if (pressed_keys.length() > 0) pressed_keys += ", ";
+                            pressed_keys += "0x" + String(keycode, HEX);
+                            
+                            // キーコードを文字に変換
+                            String key_str = keycodeToString(keycode, shift_pressed);
+                            if (pressed_chars.length() > 0) pressed_chars += ", ";
+                            pressed_chars += key_str;
+                            
+                            #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+                            Serial.printf("  NKRO バイト%d bit%d: 0x%02X -> %s (shift=%s)\n", i, bit, keycode, key_str.c_str(), shift_pressed ? "true" : "false");
+                            #endif
+                        }
                     }
                 }
             }
+        } else {
+            // 不明な形式の場合は何もしない（Pythonと同じ）
+            #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+            Serial.printf("不明な形式: %s - キー処理をスキップ\n", format.format.c_str());
+            #endif
         }
         
         #if SERIAL_OUTPUT_ENABLED
@@ -447,11 +474,15 @@ private:
         }
         #endif
         
+        #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+        Serial.printf("pressed_chars最終値: '%s'\n", pressed_chars.c_str());
+        #endif
+        
         // ディスプレイ更新（リアルタイム表示）
         String display_hex = hex_data;
         String display_keys = pressed_keys.length() > 0 ? pressed_keys : "None";
         String display_chars = pressed_chars.length() > 0 ? pressed_chars : "None";
-        updateDisplayWithKeys(display_hex, display_keys, display_chars);
+        updateDisplayWithKeys(display_hex, display_keys, display_chars, shift_pressed);
         
         // 変更の検出（Pythonと同じロジック）
         if (has_last_report) {
@@ -498,14 +529,15 @@ private:
                                   dev_info.speed == USB_SPEED_FULL ? "Full" : "High");
         #endif
         
-        // DOIO KB16の検出（より詳細なチェック）
+        // DOIO KB16の検出（Pythonと同じ処理）
         if (device_vendor_id == DOIO_VID && device_product_id == DOIO_PID) {
             is_doio_kb16 = true;
             isConnected = true;
             report_size = 16;  // DOIO KB16は16バイト固定
             #if SERIAL_OUTPUT_ENABLED
             Serial.println("✓ DOIO KB16を検出: 16バイト固定レポートサイズ");
-            Serial.println("✓ Pythonアナライザーと同じ処理を開始");
+            Serial.println("✓ Pythonアナライザーと同じ処理：16バイトのStandardフォーマット");
+            Serial.println("✓ 修飾キー処理が有効です（バイト1をチェック）");
             #endif
             
             // DOIO KB16専用の初期化処理
@@ -516,6 +548,7 @@ private:
             report_size = 8;   // 標準キーボードは8バイト
             #if SERIAL_OUTPUT_ENABLED
             Serial.println("標準キーボードとして処理 (8バイトレポート)");
+            Serial.println("修飾キー処理が有効です（バイト0をチェック）");
             #endif
             
             // 標準キーボード用の初期化処理
