@@ -1,6 +1,6 @@
 #include "PythonStyleAnalyzer.h"
 
-// Pythonアナライザーと完全に同じキーコードマッピング
+// これは，正しいので変更しない．
 const KeycodeMapping KEYCODE_MAP[] = {
     // アルファベット (0x08-0x21: a-z) - Pythonと同じ
     {0x08, "a", "A"}, {0x09, "b", "B"}, {0x0A, "c", "C"}, {0x0B, "d", "D"},
