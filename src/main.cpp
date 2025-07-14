@@ -101,13 +101,50 @@ private:
     // OLED表示用データ
     String lastHexData = "";
     String lastKeyPresses = "";
+    String currentPressedKeys = "";
+    String lastCharacters = "";
     bool displayNeedsUpdate = false;
     unsigned long lastDisplayUpdate = 0;
+    unsigned long lastKeyEventTime = 0;
 
 public:
     PythonStyleAnalyzer(Adafruit_SSD1306* disp) : display(disp) {
         memset(&report_format, 0, sizeof(report_format));
     }
+    
+    // アイドル状態のディスプレイ更新（publicメソッド）
+    void updateDisplayIdle() {
+        if (!display) return;
+        
+        // 3秒間キー入力がない場合はアイドル表示
+        if (millis() - lastKeyEventTime > 3000) {
+            display->clearDisplay();
+            display->setTextSize(1);
+            display->setTextColor(SSD1306_WHITE);
+            display->setCursor(0, 0);
+            
+            if (isConnected) {
+                display->println("Device Connected");
+                display->println("Waiting for keys...");
+                display->println("");
+                display->print("Uptime: ");
+                display->print(millis() / 1000);
+                display->println("s");
+            } else {
+                display->println("Python Style");
+                display->println("KB16 Analyzer");
+                display->println("");
+                display->println("Waiting for USB");
+                display->println("device...");
+                display->println("");
+                display->println("Connect keyboard");
+                display->println("to start");
+            }
+            display->display();
+        }
+    }
+
+private:
     
     // ディスプレイ更新用のヘルパー関数
     void updateDisplayForDevice(const String& deviceType) {
@@ -123,8 +160,97 @@ public:
         display->println(deviceType);
         display->println("Connected!");
         display->println("");
-        display->println("Reading USB data...");
-        display->println("Check Serial Monitor");
+        display->println("Ready to read keys");
+        display->display();
+    }
+    
+    // キー押下時のディスプレイ更新
+    void updateDisplayWithKeys(const String& hexData, const String& keyNames, const String& characters) {
+        if (!display) return;
+        
+        // 表示データを更新
+        lastHexData = hexData;
+        lastKeyPresses = keyNames;
+        lastCharacters = characters;
+        lastKeyEventTime = millis();
+        
+        display->clearDisplay();
+        display->setTextSize(1);
+        display->setTextColor(SSD1306_WHITE);
+        display->setCursor(0, 0);
+        
+        // HEXデータを連続表示（16バイト完全表示）
+        if (hexData.length() > 0) {
+            // バイト単位で分割して表示
+            String bytes[16];
+            int byteCount = 0;
+            String currentByte = "";
+            
+            // HEXデータをバイト単位で分割
+            for (int i = 0; i < hexData.length() && byteCount < 16; i++) {
+                char c = hexData.charAt(i);
+                if (c == ' ') {
+                    if (currentByte.length() > 0) {
+                        bytes[byteCount] = currentByte;
+                        byteCount++;
+                        currentByte = "";
+                    }
+                } else {
+                    currentByte += c;
+                }
+            }
+            // 最後のバイトを処理
+            if (currentByte.length() > 0 && byteCount < 16) {
+                bytes[byteCount] = currentByte;
+                byteCount++;
+            }
+            
+            // 8バイトずつ2行で表示（スペース込みで21文字以内）
+            String line1 = "";
+            String line2 = "";
+            
+            for (int i = 0; i < byteCount; i++) {
+                if (i < 8) {
+                    if (line1.length() > 0) line1 += " ";
+                    line1 += bytes[i];
+                } else {
+                    if (line2.length() > 0) line2 += " ";
+                    line2 += bytes[i];
+                }
+            }
+            
+            display->println(line1);
+            if (line2.length() > 0) {
+                display->println(line2);
+            }
+        } else {
+            display->println("No HEX data");
+        }
+        
+        // キー名（短縮表示）
+        display->print("Key:");
+        if (keyNames.length() > 0) {
+            String shortKeys = keyNames;
+            if (shortKeys.length() > 20) {
+                shortKeys = shortKeys.substring(0, 17) + "...";
+            }
+            display->println(shortKeys);
+        } else {
+            display->println("None");
+        }
+        
+        // 文字表現（短縮表示）
+        display->print("Chr:");
+        if (characters.length() > 0) {
+            String shortChars = characters;
+            if (shortChars.length() > 20) {
+                shortChars = shortChars.substring(0, 17) + "...";
+            }
+            display->println(shortChars);
+        } else {
+            display->println("None");
+        }
+        
         display->display();
     }
     
@@ -198,8 +324,7 @@ public:
     void prettyPrintReport(const uint8_t* report_data, int data_size) {
         ReportFormat format = analyzeReportFormat(report_data, data_size);
         
-        #if SERIAL_OUTPUT_ENABLED
-        // バイト列を16進数で表示（Pythonと同一フォーマット）
+        // バイト列を16進数で表示（Pythonと同一フォーマット）- 16バイト完全対応
         String hex_data = "";
         for (int i = 0; i < data_size; i++) {
             if (report_data[i] < 16) hex_data += "0";
@@ -207,7 +332,13 @@ public:
         }
         hex_data.trim();
         hex_data.toUpperCase();
+        
+        #if SERIAL_OUTPUT_ENABLED
         Serial.printf("\nHIDレポート [%dバイト]: %s\n", data_size, hex_data.c_str());
+        // 16バイトの場合はバイト位置も表示
+        if (data_size == 16) {
+            Serial.println("バイト位置: 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F");
+        }
         #endif
         
         // 修飾キー（Pythonと同じロジック）
@@ -253,7 +384,13 @@ public:
         
         if (format.format == "DOIO_KB16_16BYTE") {
             // DOIO KB16: 16バイトレポート - 2-15バイトすべてをチェック
-            for (int i = 2; i < data_size; i++) {
+            #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+            Serial.println("DOIO KB16 16バイトレポート解析:");
+            Serial.printf("  バイト0 (固有): 0x%02X\n", report_data[0]);
+            Serial.printf("  バイト1 (修飾): 0x%02X\n", report_data[1]);
+            #endif
+            
+            for (int i = 2; i < data_size && i < 16; i++) {  // 明示的に16バイト上限を設定
                 if (report_data[i] != 0) {
                     uint8_t keycode = report_data[i];
                     if (pressed_keys.length() > 0) pressed_keys += ", ";
@@ -263,6 +400,10 @@ public:
                     String key_str = keycodeToString(keycode, shift_pressed);
                     if (pressed_chars.length() > 0) pressed_chars += ", ";
                     pressed_chars += key_str;
+                    
+                    #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
+                    Serial.printf("  バイト%d: 0x%02X -> %s\n", i, keycode, key_str.c_str());
+                    #endif
                 }
             }
         } else if (format.format == "Standard") {
@@ -305,6 +446,12 @@ public:
             Serial.printf("文字表現: %s\n", pressed_chars.c_str());
         }
         #endif
+        
+        // ディスプレイ更新（リアルタイム表示）
+        String display_hex = hex_data;
+        String display_keys = pressed_keys.length() > 0 ? pressed_keys : "None";
+        String display_chars = pressed_chars.length() > 0 ? pressed_chars : "None";
+        updateDisplayWithKeys(display_hex, display_keys, display_chars);
         
         // 変更の検出（Pythonと同じロジック）
         if (has_last_report) {
@@ -403,11 +550,11 @@ public:
             display->println("Python Style");
             display->println("KB16 Analyzer");
             display->println("");
+            display->println("Device");
+            display->println("DISCONNECTED");
+            display->println("");
             display->println("Waiting for USB");
             display->println("device...");
-            display->println("");
-            display->println("Check Serial Monitor");
-            display->println("for detailed output");
             display->display();
         }
     }
@@ -508,7 +655,7 @@ void setup() {
     
     #if SERIAL_OUTPUT_ENABLED
     Serial.begin(115200);
-    while (!Serial && millis() < 5000) {
+    while (!Serial && millis() < 2000) {
         delay(100);
     }
     
@@ -532,6 +679,12 @@ void setup() {
         while (true) delay(1000);
     }
     
+    // ===== 5秒間のプログラミングモード（書き込みモード）開始 =====
+    #if SERIAL_OUTPUT_ENABLED
+    Serial.println("Starting 5-second programming mode...");
+    #endif
+    
+    // プログラミングモード初期表示
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
@@ -539,11 +692,71 @@ void setup() {
     display.println("Python Style");
     display.println("KB16 Analyzer");
     display.println("");
+    display.println("Programming Mode");
+    display.println("Safe to upload");
+    display.println("");
+    display.println("Starting in 5s...");
+    display.display();
+    
+    // 5秒カウントダウン
+    for (int i = 5; i > 0; i--) {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+        display.println("Python Style");
+        display.println("KB16 Analyzer");
+        display.println("");
+        display.println("Programming Mode");
+        display.println("Safe to upload");
+        display.println("");
+        display.print("Starting in ");
+        display.print(i);
+        display.println("s...");
+        display.display();
+        
+        // 1秒待機
+        delay(1000);
+        
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.printf("Programming mode countdown: %d seconds remaining\n", i);
+        #endif
+    }
+    
+    #if SERIAL_OUTPUT_ENABLED
+    Serial.println("Programming mode finished. Starting USB Host mode...");
+    #endif
+    
+    // プログラミングモード終了の表示
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println("Python Style");
+    display.println("KB16 Analyzer");
+    display.println("");
+    display.println("USB Host Mode");
+    display.println("ACTIVATED!");
+    display.println("");
+    display.println("Ready for device");
+    display.display();
+    delay(1000);
+    
+    // ===== プログラミングモード終了、通常のUSBホストモード開始 =====
+    
+    // 通常の待機状態表示
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println("KB16 16-Byte Monitor");
+    display.println("===================");
+    display.println("");
     display.println("Waiting for USB");
     display.println("device...");
     display.println("");
-    display.println("Check Serial Monitor");
-    display.println("for detailed output");
+    display.println("Full 16-byte HEX");
+    display.println("display ready");
     display.display();
     
     // Pythonスタイルアナライザー初期化
@@ -560,6 +773,13 @@ void setup() {
 void loop() {
     // USBタスクの実行（Pythonのread相当の処理が内部で行われる）
     analyzer->task();
+    
+    // ディスプレイのアイドル状態更新（定期的にチェック）
+    static unsigned long lastIdleCheck = 0;
+    if (millis() - lastIdleCheck > 1000) {  // 1秒ごとにチェック
+        lastIdleCheck = millis();
+        analyzer->updateDisplayIdle();
+    }
     
     // 最小限の遅延（応答性最優先）
     delayMicroseconds(100);
