@@ -1,11 +1,8 @@
 #include "PythonStyleAnalyzer.h"
 
-// Pythonアナライザーと同じキーコードマッピング
+// Pythonアナライザーと完全に同じキーコードマッピング
 const KeycodeMapping KEYCODE_MAP[] = {
-    // アルファベット (0x04-0x1D: a-z) - 標準キーボード
-    {0x04, "a", "A"}, {0x05, "b", "B"}, {0x06, "c", "C"}, {0x07, "d", "D"},
-    
-    // DOIO KB16カスタムアルファベット (0x08-0x21)
+    // アルファベット (0x08-0x21: a-z) - Pythonと同じ
     {0x08, "a", "A"}, {0x09, "b", "B"}, {0x0A, "c", "C"}, {0x0B, "d", "D"},
     {0x0C, "e", "E"}, {0x0D, "f", "F"}, {0x0E, "g", "G"}, {0x0F, "h", "H"},
     {0x10, "i", "I"}, {0x11, "j", "J"}, {0x12, "k", "K"}, {0x13, "l", "L"},
@@ -14,17 +11,17 @@ const KeycodeMapping KEYCODE_MAP[] = {
     {0x1C, "u", "U"}, {0x1D, "v", "V"}, {0x1E, "w", "W"}, {0x1F, "x", "X"},
     {0x20, "y", "Y"}, {0x21, "z", "Z"},
     
-    // DOIO KB16カスタム数字 (0x22-0x2B)
+    // 数字と記号 (0x22-0x2B) - Pythonと同じ
     {0x22, "1", "!"}, {0x23, "2", "@"}, {0x24, "3", "#"}, {0x25, "4", "$"},
     {0x26, "5", "%"}, {0x27, "6", "^"}, {0x28, "7", "&"}, {0x29, "8", "*"},
     {0x2A, "9", "("}, {0x2B, "0", ")"},
-
-    // DOIO KB16カスタム記号・制御キーなど (Pythonと同じ4つずらしたマッピング)
-    {0x2C, "Enter", "\n"},     // Enter
-    {0x2D, "Esc", ""},         // Escape
-    {0x2E, "Backspace", ""},   // Backspace
-    {0x2F, "Tab", "\t"},       // Tab
-    {0x30, "Space", " "},      // Space
+    
+    // 一般的なキー (0x2C-0x3C) - Pythonと同じ
+    {0x2C, "Enter", "\n"},       // Enter
+    {0x2D, "Esc", ""},           // Escape
+    {0x2E, "Backspace", ""},     // Backspace
+    {0x2F, "Tab", "\t"},         // Tab
+    {0x30, "Space", " "},        // Space
     {0x31, "-", "_"},
     {0x32, "=", "+"},
     {0x33, "[", "{"},
@@ -37,31 +34,34 @@ const KeycodeMapping KEYCODE_MAP[] = {
     {0x3B, ".", ">"},
     {0x3C, "/", "?"},
     
-    // ファンクションキー (Pythonと同じ4つずらしたマッピング)
-    {0x3E, "F1", ""}, {0x3F, "F2", ""}, {0x40, "F3", ""}, {0x41, "F4", ""},
-    {0x42, "F5", ""}, {0x43, "F6", ""}, {0x44, "F7", ""}, {0x45, "F8", ""},
-    {0x46, "F9", ""}, {0x47, "F10", ""}, {0x48, "F11", ""}, {0x49, "F12", ""},
-
-    // 特殊キー (Pythonと同じ4つずらしたマッピング)
-    {0x4D, "Insert", ""}, {0x4E, "Home", ""}, {0x4F, "Page Up", ""},
-    {0x50, "Delete", ""}, {0x51, "End", ""}, {0x52, "Page Down", ""},
-    {0x53, "Right", ""}, {0x54, "Left", ""}, {0x55, "Down", ""}, {0x56, "Up", ""},
+    // ファンクションキー (0x3E-0x49) - Pythonと同じ
+    {0x3E, "F1", "F1"}, {0x3F, "F2", "F2"}, {0x40, "F3", "F3"},
+    {0x41, "F4", "F4"}, {0x42, "F5", "F5"}, {0x43, "F6", "F6"},
+    {0x44, "F7", "F7"}, {0x45, "F8", "F8"}, {0x46, "F9", "F9"},
+    {0x47, "F10", "F10"}, {0x48, "F11", "F11"}, {0x49, "F12", "F12"},
     
-    // テンキー (Pythonと同じ4つずらしたマッピング)
+    // 特殊キー (0x4D-0x56) - Pythonと同じ
+    {0x4D, "Insert", "Insert"}, {0x4E, "Home", "Home"}, {0x4F, "PageUp", "PageUp"},
+    {0x50, "Delete", "Delete"}, {0x51, "End", "End"}, {0x52, "PageDown", "PageDown"},
+    {0x53, "Right", "Right"}, {0x54, "Left", "Left"}, 
+    {0x55, "Down", "Down"}, {0x56, "Up", "Up"},
+    
+    // テンキー (0x58-0x67) - Pythonと同じ
     {0x58, "/", "/"}, {0x59, "*", "*"}, {0x5A, "-", "-"}, {0x5B, "+", "+"},
-    {0x5C, "Enter", "\n"}, {0x5D, "1", "1"}, {0x5E, "2", "2"}, {0x5F, "3", "3"},
+    {0x5C, "Enter", "Enter"}, {0x5D, "1", "1"}, {0x5E, "2", "2"}, {0x5F, "3", "3"},
     {0x60, "4", "4"}, {0x61, "5", "5"}, {0x62, "6", "6"}, {0x63, "7", "7"},
     {0x64, "8", "8"}, {0x65, "9", "9"}, {0x66, "0", "0"}, {0x67, ".", "."},
     
-    // 制御キー (Pythonと同じマッピング)
-    {0xE0, "Ctrl", ""}, {0xE1, "Shift", ""}, {0xE2, "Alt", ""}, {0xE3, "GUI", ""},
-    {0xE4, "右Ctrl", ""}, {0xE5, "右Shift", ""}, {0xE6, "右Alt", ""}, {0xE7, "右GUI", ""},
+    // 制御キー (0xE0-0xE7) - Pythonと同じ
+    {0xE0, "Ctrl", "Ctrl"}, {0xE1, "Shift", "Shift"}, {0xE2, "Alt", "Alt"},
+    {0xE3, "GUI", "GUI"}, {0xE4, "右Ctrl", "右Ctrl"}, {0xE5, "右Shift", "右Shift"},
+    {0xE6, "右Alt", "右Alt"}, {0xE7, "右GUI", "右GUI"}
 };
 
 const int KEYCODE_MAP_SIZE = sizeof(KEYCODE_MAP) / sizeof(KeycodeMapping);
 
-PythonStyleAnalyzer::PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboardForwarder* bleForward) 
-    : display(disp), bleForwarder(bleForward) {
+PythonStyleAnalyzer::PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboard* bleKbd) 
+    : display(disp), bleKeyboard(bleKbd) {
     memset(&report_format, 0, sizeof(report_format));
 }
 
@@ -80,14 +80,10 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
             display->println("USB->BLE Bridge");
             
             // BLE接続状態を表示
-            if (bleForwarder && bleForwarder->isEnabled()) {
-                if (bleForwarder->isConnected()) {
-                    display->println("BLE: Connected");
-                } else {
-                    display->println("BLE: Waiting...");
-                }
+            if (bleKeyboard && bleKeyboard->isConnected()) {
+                display->println("BLE: Connected");
             } else {
-                display->println("BLE: Disabled");
+                display->println("BLE: Disconnected");
             }
             
             display->println("");
@@ -123,10 +119,10 @@ void PythonStyleAnalyzer::updateDisplayForDevice(const String& deviceType) {
     display->println("");
     
     // BLE状態を表示
-    if (bleForwarder && bleForwarder->isEnabled()) {
+    if (bleKeyboard && bleKeyboard->isConnected()) {
         display->println("BLE: Ready");
     } else {
-        display->println("BLE: Disabled");
+        display->println("BLE: Waiting");
     }
     
     display->println("Forwarding keys...");
@@ -215,22 +211,32 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
         display->println("None");
     }
     
+    // 文字表示を追加
+    display->print("Char:");
+    if (characters.length() > 0) {
+        String shortChars = characters;
+        if (shortChars.length() > 19) {
+            shortChars = shortChars.substring(0, 16) + "...";
+        }
+        display->println(shortChars);
+    } else {
+        display->println("None");
+    }
+    
     // BLE転送状態を表示
     display->print("BLE:");
-    if (bleForwarder && bleForwarder->isConnected()) {
+    if (bleKeyboard && bleKeyboard->isConnected()) {
         display->println("Sent");
-    } else if (bleForwarder && bleForwarder->isEnabled()) {
-        display->println("Wait");
     } else {
-        display->println("Off");
+        display->println("Wait");
     }
     
     // Shiftキー状態を右下に表示
-    display->setCursor(105, 56);  // 右下の位置
+    display->setCursor(105, 48);  // 位置を少し上に調整
     if (shiftPressed) {
-        display->print("ON");
+        display->print("SH");
     } else {
-        display->print("OFF");
+        display->print("--");
     }
     
     display->display();
@@ -332,11 +338,6 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
         Serial.println("バイト位置: 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F");
     }
     #endif
-    
-    // BLEキーボードに転送
-    if (bleForwarder) {
-        bleForwarder->forwardHidReport(report_data, data_size);
-    }
     
     // 修飾キー（Pythonと同じロジック）
     bool shift_pressed = false;
@@ -456,6 +457,70 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     String display_chars = pressed_chars.length() > 0 ? pressed_chars : "None";
     updateDisplayWithKeys(display_hex, display_keys, display_chars, shift_pressed);
     
+    // BLE送信処理（変更があった場合のみ）
+    if (bleKeyboard && bleKeyboard->isConnected()) {
+        // 前回のレポートと比較して変更があった場合のみ送信
+        bool has_changes = false;
+        if (has_last_report) {
+            for (int i = 0; i < data_size; i++) {
+                if (last_report[i] != report_data[i]) {
+                    has_changes = true;
+                    break;
+                }
+            }
+        } else {
+            has_changes = true; // 最初のレポート
+        }
+        
+        if (has_changes) {
+            // 解析結果に基づいて適切な文字をBLEに送信
+            if (format.format == "Standard" || format.format == "NKRO") {
+                // 押されているキーを処理
+                int max_key_index = (format.size == 16) ? 16 : 8;
+                for (int i = 2; i < max_key_index; i++) {
+                    if (i < format.size && report_data[i] != 0) {
+                        uint8_t keycode = report_data[i];
+                        
+                        // 前回のレポートに同じキーがあるかチェック
+                        bool key_was_pressed = false;
+                        if (has_last_report) {
+                            for (int j = 2; j < max_key_index; j++) {
+                                if (j < data_size && last_report[j] == keycode) {
+                                    key_was_pressed = true;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // 新しく押されたキーのみを送信
+                        if (!key_was_pressed) {
+                            // キーコードを文字に変換してBLE送信
+                            String key_str = keycodeToString(keycode, shift_pressed);
+                            
+                            // 実際の文字のみを送信（制御キーでない場合）
+                            if (key_str.length() == 1 && key_str != " ") {
+                                bleKeyboard->write(key_str.c_str()[0]);
+                                Serial.printf("BLE送信: '%s' (keycode=0x%02X)\n", key_str.c_str(), keycode);
+                            } else if (key_str == " ") {
+                                bleKeyboard->write(' ');
+                                Serial.println("BLE送信: スペース");
+                            } else if (key_str == "\n") {
+                                bleKeyboard->write('\n');
+                                Serial.println("BLE送信: Enter");
+                            } else if (key_str == "\t") {
+                                bleKeyboard->write('\t');
+                                Serial.println("BLE送信: Tab");
+                            } else if (key_str == "Backspace") {
+                                bleKeyboard->write(8);  // ASCII backspace
+                                Serial.println("BLE送信: Backspace");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // 変更の検出（Pythonと同じロジック）
     if (has_last_report) {
         bool has_changes = false;
@@ -549,8 +614,8 @@ void PythonStyleAnalyzer::onGone(const usb_host_client_event_msg_t *eventMsg) {
     report_format_initialized = false;
     
     // BLEキーボードのキーをすべてリリース
-    if (bleForwarder) {
-        bleForwarder->releaseAllKeys();
+    if (bleKeyboard) {
+        bleKeyboard->releaseAll();
     }
     
     // ディスプレイを元の状態に戻す

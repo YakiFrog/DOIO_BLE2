@@ -1,12 +1,29 @@
 #ifndef PYTHON_STYLE_ANALYZER_H
 #define PYTHON_STYLE_ANALYZER_H
 
+// HID_CLASS定義の競合を回避
+#ifdef HID_CLASS
+#undef HID_CLASS
+#endif
+#ifdef HID_SUBCLASS_NONE
+#undef HID_SUBCLASS_NONE
+#endif
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <BleKeyboard.h>
+
+// HID関連の定義の競合を防ぐため、再度チェック
+#ifdef HID_CLASS
+#undef HID_CLASS
+#endif
+#ifdef HID_SUBCLASS_NONE
+#undef HID_SUBCLASS_NONE
+#endif
+
 #include "EspUsbHost.h"
-#include "BleKeyboardForwarder.h"
 
 // DOIO KB16デバイス情報
 #define DOIO_VID 0xD010
@@ -42,7 +59,7 @@ struct ReportFormat {
 class PythonStyleAnalyzer : public EspUsbHost {
 private:
     Adafruit_SSD1306* display;
-    BleKeyboardForwarder* bleForwarder;
+    BleKeyboard* bleKeyboard;
     
     // Pythonアナライザーの状態変数（完全一致）
     uint8_t last_report[32] = {0};
@@ -65,7 +82,7 @@ private:
     unsigned long lastKeyEventTime = 0;
 
 public:
-    PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboardForwarder* bleForward);
+    PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboard* bleKbd);
     
     // アイドル状態のディスプレイ更新（publicメソッド）
     void updateDisplayIdle();

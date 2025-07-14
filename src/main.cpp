@@ -1,12 +1,29 @@
 // DOIO KB16 USB-to-BLE Bridge with Python-style HID Analysis
 // USBキーボード入力をBLEキーボードに転送する完全なブリッジシステム
 
+// HID定義の競合を回避
+#ifdef HID_CLASS
+#undef HID_CLASS
+#endif
+#ifdef HID_SUBCLASS_NONE
+#undef HID_SUBCLASS_NONE
+#endif
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <BleKeyboard.h>
+
+// HID関連の定義の競合を防ぐため、再度チェック
+#ifdef HID_CLASS
+#undef HID_CLASS
+#endif
+#ifdef HID_SUBCLASS_NONE
+#undef HID_SUBCLASS_NONE
+#endif
+
 #include "PythonStyleAnalyzer.h"
-#include "BleKeyboardForwarder.h"
 
 // SSD1306ディスプレイ設定
 #define SCREEN_WIDTH 128
@@ -20,7 +37,7 @@
 
 // グローバル変数
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-BleKeyboardForwarder* bleForwarder;
+BleKeyboard bleKeyboard("DOIO KB16 Bridge", "DOIO Bridge", 100);
 PythonStyleAnalyzer* analyzer;
 
 void setup() {
@@ -106,44 +123,31 @@ void setup() {
     display.display();
     delay(1000);
     
-    // ===== BLEキーボード転送機能の初期化 =====
-    bleForwarder = new BleKeyboardForwarder();
-    if (bleForwarder->begin("DOIO KB16 Bridge")) {
-        Serial.println("✓ BLEキーボード転送機能が正常に初期化されました");
-        
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(SSD1306_WHITE);
-        display.setCursor(0, 0);
-        display.println("USB->BLE Bridge");
-        display.println("===============");
-        display.println("");
-        display.println("BLE: Ready");
-        display.println("USB: Waiting...");
-        display.println("");
-        display.println("Connect keyboard");
-        display.display();
-    } else {
-        Serial.println("✗ BLEキーボード転送機能の初期化に失敗しました");
-        
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(SSD1306_WHITE);
-        display.setCursor(0, 0);
-        display.println("USB->BLE Bridge");
-        display.println("===============");
-        display.println("");
-        display.println("BLE: ERROR");
-        display.println("USB: Waiting...");
-        display.println("");
-        display.println("Connect keyboard");
-        display.display();
-    }
+    // ===== BLEキーボード初期化 =====
+    bleKeyboard.begin();
+    bleKeyboard.setDelay(20);  // 遅延を短縮
+    Serial.println("✓ BLEキーボードを初期化しました");
+    
+    // 初期化後の安定化待機
+    delay(1000);
+    
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println("USB->BLE Bridge");
+    display.println("===============");
+    display.println("");
+    display.println("BLE: Ready");
+    display.println("USB: Waiting...");
+    display.println("");
+    display.println("Connect keyboard");
+    display.display();
     
     delay(1000);
     
     // ===== Pythonスタイルアナライザー初期化 =====
-    analyzer = new PythonStyleAnalyzer(&display, bleForwarder);
+    analyzer = new PythonStyleAnalyzer(&display, &bleKeyboard);
     analyzer->begin();
     
     Serial.println("システム初期化完了");
@@ -158,10 +162,10 @@ void setup() {
     display.println("DOIO KB16 Bridge");
     display.println("================");
     display.println("");
-    if (bleForwarder && bleForwarder->isEnabled()) {
-        display.println("BLE: Ready");
+    if (bleKeyboard.isConnected()) {
+        display.println("BLE: Connected");
     } else {
-        display.println("BLE: Error");
+        display.println("BLE: Waiting");
     }
     display.println("USB: Waiting...");
     display.println("");
@@ -174,22 +178,13 @@ void loop() {
     // USBタスクの実行（PythonアナライザーとBLE転送処理が内部で行われる）
     analyzer->task();
     
+
+    
     // ディスプレイのアイドル状態更新（定期的にチェック）
     static unsigned long lastIdleCheck = 0;
     if (millis() - lastIdleCheck > 1000) {  // 1秒ごとにチェック
         lastIdleCheck = millis();
         analyzer->updateDisplayIdle();
-    }
-    
-    // BLE接続状態の定期チェック（デバッグ用）
-    static unsigned long lastBleCheck = 0;
-    if (millis() - lastBleCheck > 5000) {  // 5秒ごとにチェック
-        lastBleCheck = millis();
-        if (bleForwarder) {
-            Serial.printf("BLE状態: %s\n", 
-                         bleForwarder->isConnected() ? "接続中" : 
-                         bleForwarder->isEnabled() ? "待機中" : "無効");
-        }
     }
     
     // 最小限の遅延（応答性最優先）

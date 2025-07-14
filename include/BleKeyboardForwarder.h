@@ -11,6 +11,12 @@ private:
     bool bleEnabled = false;
     unsigned long lastSendTime = 0;
     static const unsigned long SEND_INTERVAL = 10; // 10ms間隔で送信
+    
+    // テスト用の定期送信機能
+    bool testModeEnabled = false;
+    unsigned long lastTestSendTime = 0;
+    static const unsigned long TEST_SEND_INTERVAL = 2000; // 2秒間隔でテスト送信
+    int testCharIndex = 0;
 
 public:
     BleKeyboardForwarder();
@@ -42,6 +48,11 @@ public:
     
     // デバッグ情報
     void printStatus();
+    
+    // BLE接続テスト用の定期送信機能
+    void enableTestMode(bool enable = true);
+    void sendTestCharacter();
+    void updateTestSending(); // メインループで呼び出す
 };
 
 #endif // BLE_KEYBOARD_FORWARDER_H
