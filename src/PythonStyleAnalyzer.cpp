@@ -69,9 +69,6 @@ PythonStyleAnalyzer::PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboard* bl
 void PythonStyleAnalyzer::updateDisplayIdle() {
     if (!display) return;
     
-    // 長押し処理を定期実行
-    handleKeyRepeat();
-    
     // 3秒間キー入力がない場合はアイドル表示
     if (millis() - lastKeyEventTime > 3000) {
         display->clearDisplay();
@@ -560,7 +557,7 @@ void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
     // delay(1);  // 完全撤廃
 }
 
-// 複数文字を効率的に送信する関数（高速化）
+// 複数文字を効率的に送信する関数（複数キー対応修正版）
 void PythonStyleAnalyzer::sendString(const String& chars) {
     if (!bleKeyboard->isConnected()) {
         return;
@@ -577,8 +574,21 @@ void PythonStyleAnalyzer::sendString(const String& chars) {
         intervalCount++;
     }
     
+    // 複数キー判定
+    bool isMultipleKeys = chars.indexOf(", ") != -1;
+    int keyCount = 1;
+    if (isMultipleKeys) {
+        keyCount = 1;
+        for (int i = 0; i < chars.length() - 1; i++) {
+            if (chars.substring(i, i + 2) == ", ") {
+                keyCount++;
+            }
+        }
+    }
+    
     #if SERIAL_OUTPUT_ENABLED
-    Serial.printf("BLE送信（極限高速）: '%s' (前回送信からの経過時間: %lu ms)\n", chars.c_str(), interval);
+    Serial.printf("BLE送信（複数キー対応）: '%s' (キー数: %d, 前回送信からの経過時間: %lu ms)\n", 
+                  chars.c_str(), keyCount, interval);
     #endif
     
     lastBleTransmissionTime = currentTime;
@@ -590,15 +600,22 @@ void PythonStyleAnalyzer::sendString(const String& chars) {
         lastStatsReport = currentTime;
     }
     
-    // カンマ区切りで分割して送信
+    // カンマ区切りで分割して送信（複数キー時は適切な間隔で）
     int start = 0;
     int comma_pos = 0;
+    int sentCount = 0;
     
     while ((comma_pos = chars.indexOf(", ", start)) != -1) {
         String single_char = chars.substring(start, comma_pos);
         single_char.trim();
         if (single_char.length() > 0) {
             sendSingleCharacterFast(single_char);
+            sentCount++;
+            
+            // 複数キー送信時は適切な間隔を空ける
+            if (isMultipleKeys && sentCount < keyCount) {
+                delayMicroseconds(200);  // 0.2ms間隔
+            }
         }
         start = comma_pos + 2;
     }
@@ -613,7 +630,7 @@ void PythonStyleAnalyzer::sendString(const String& chars) {
     }
 }
 
-// 高速化された単一文字送信関数（delay完全撤廃）
+// 高速化された単一文字送信関数（複数キー対応修正版）
 void PythonStyleAnalyzer::sendSingleCharacterFast(const String& character) {
     if (!bleKeyboard->isConnected()) {
         return;
@@ -639,14 +656,14 @@ void PythonStyleAnalyzer::sendSingleCharacterFast(const String& character) {
     unsigned long endTime = millis();
     unsigned long bleTransmissionTime = endTime - startTime;
     
-    #if SERIAL_OUTPUT_ENABLED
+    #if SERIAL_OUTPUT_ENABLED && DEBUG_ENABLED
     if (bleTransmissionTime > 0) {
         Serial.printf("  BLE送信実行時間: %lu ms (文字: '%s')\n", bleTransmissionTime, character.c_str());
     }
     #endif
     
-    // 最小限の安定化待機（マイクロ秒レベル）
-    delayMicroseconds(500);  // 0.5ms
+    // 最小限の安定化待機（複数キー時の安定性向上）
+    delayMicroseconds(300);  // 0.3ms（複数キー時の安定性向上）
 }
 
 // デバイス接続時の処理（元のプログラムと同じ処理を追加）
@@ -825,35 +842,55 @@ void PythonStyleAnalyzer::processRawReport16Bytes(const uint8_t* data) {
 // 長押しリピート処理
 void PythonStyleAnalyzer::handleKeyRepeat() {
     if (currentPressedChars.length() == 0) {
+        // キーが押されていない場合はリピート状態をリセット
         isRepeating = false;
         return;
     }
     
     unsigned long currentTime = millis();
     
+    // 複数キー判定
+    bool isMultipleKeys = currentPressedChars.indexOf(", ") != -1;
+    int keyCount = 1;
+    if (isMultipleKeys) {
+        keyCount = 1;
+        for (int i = 0; i < currentPressedChars.length() - 1; i++) {
+            if (currentPressedChars.substring(i, i + 2) == ", ") {
+                keyCount++;
+            }
+        }
+    }
+    
+    // 複数キー時は少し遅延を長くして安定化
+    unsigned long effectiveRepeatDelay = isMultipleKeys ? REPEAT_DELAY + (keyCount * 10) : REPEAT_DELAY;
+    unsigned long effectiveRepeatRate = isMultipleKeys ? REPEAT_RATE + (keyCount * 5) : REPEAT_RATE;
+    
     if (!isRepeating) {
-        // 長押し開始判定（極限高速化：30ms）
+        // 長押し開始判定
         unsigned long elapsed = currentTime - keyPressStartTime;
-        if (elapsed >= REPEAT_DELAY) {
+        if (elapsed >= effectiveRepeatDelay) {
             isRepeating = true;
             lastRepeatTime = currentTime;
             
             #if SERIAL_OUTPUT_ENABLED
-            Serial.printf("長押しリピート開始（超極限高速）: '%s' (経過時間: %lu ms)\n", 
-                         currentPressedChars.c_str(), elapsed);
+            Serial.printf("🔥 長押しリピート開始: '%s' (キー数: %d, 経過時間: %lu ms, 遅延: %lu ms)\n", 
+                         currentPressedChars.c_str(), keyCount, elapsed, effectiveRepeatDelay);
             #endif
+            
+            // 長押し開始時に即座に1回送信
+            sendString(currentPressedChars);
         }
     } else {
-        // リピート送信（極限高速化：5ms間隔）
+        // リピート送信
         unsigned long elapsed = currentTime - lastRepeatTime;
-        if (elapsed >= REPEAT_RATE) {
+        if (elapsed >= effectiveRepeatRate) {
             lastRepeatTime = currentTime;
             
             unsigned long totalElapsed = currentTime - keyPressStartTime;
             
             #if SERIAL_OUTPUT_ENABLED
-            Serial.printf("長押しリピート送信（超極限高速）: '%s' (間隔: %lu ms, 総経過時間: %lu ms)\n", 
-                         currentPressedChars.c_str(), elapsed, totalElapsed);
+            Serial.printf("🔥 長押しリピート送信: '%s' (キー数: %d, 間隔: %lu ms, 総経過時間: %lu ms)\n", 
+                         currentPressedChars.c_str(), keyCount, elapsed, totalElapsed);
             #endif
             
             // 現在押されているキーを送信
@@ -868,7 +905,7 @@ void PythonStyleAnalyzer::processKeyPress(const String& pressed_chars) {
         // キーリリース
         if (currentPressedChars.length() > 0) {
             #if SERIAL_OUTPUT_ENABLED
-            Serial.println("キーリリース検出: " + currentPressedChars);
+            Serial.printf("🔑 キーリリース検出: '%s'\n", currentPressedChars.c_str());
             #endif
             currentPressedChars = "";
             isRepeating = false;
@@ -886,19 +923,29 @@ void PythonStyleAnalyzer::processKeyPress(const String& pressed_chars) {
         isRepeating = false;
         
         #if SERIAL_OUTPUT_ENABLED
-        Serial.println("新しいキー押下: " + pressed_chars);
+        Serial.printf("🔑 新しいキー押下: '%s' (開始時刻: %lu ms)\n", pressed_chars.c_str(), keyPressStartTime);
         #endif
         
         // 初回送信（常に送信する - 高速化）
         #if SERIAL_OUTPUT_ENABLED
-        Serial.println("初回送信（高速）: " + pressed_chars);
+        Serial.printf("🔑 初回送信: '%s'\n", pressed_chars.c_str());
         #endif
         sendString(pressed_chars);
         
         // 送信後に即座に履歴を更新（高速連続押し対応）
         lastSentChars = pressed_chars;
+    } else {
+        // 同じキーの継続 - handleKeyRepeat()で処理される
+        #if SERIAL_OUTPUT_ENABLED
+        static unsigned long lastSameKeyLog = 0;
+        unsigned long currentTime = millis();
+        if (currentTime - lastSameKeyLog > 1000) {  // 1秒ごとにログ
+            Serial.printf("🔑 同じキー継続中: '%s' (継続時間: %lu ms)\n", 
+                         pressed_chars.c_str(), currentTime - keyPressStartTime);
+            lastSameKeyLog = currentTime;
+        }
+        #endif
     }
-    // 同じキーが継続中の場合はhandleKeyRepeat()で処理
 }
 
 // パフォーマンス統計レポート
@@ -918,8 +965,9 @@ void PythonStyleAnalyzer::reportPerformanceStats() {
     Serial.printf("    - 最大間隔: %lu ms\n", maxTransmissionInterval);
     Serial.printf("    - 平均間隔: %lu ms\n", avgInterval);
     Serial.printf("  長押しリピート設定:\n");
-    Serial.printf("    - 初期遅延: 30 ms\n");
-    Serial.printf("    - リピート間隔: 5 ms\n");
+    Serial.printf("    - 単一キー初期遅延: %lu ms\n", REPEAT_DELAY);
+    Serial.printf("    - 単一キーリピート間隔: %lu ms\n", REPEAT_RATE);
+    Serial.printf("    - 複数キー時は追加遅延あり\n");
     Serial.printf("  BLEライブラリ遅延: 1 ms\n");
     Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     #endif

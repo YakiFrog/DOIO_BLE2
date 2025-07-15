@@ -101,8 +101,8 @@ private:
     unsigned long keyPressStartTime = 0;
     unsigned long lastRepeatTime = 0;
     bool isRepeating = false;
-    static const unsigned long REPEAT_DELAY = 30;   // 長押し開始までの遅延（ms）- 極限高速化
-    static const unsigned long REPEAT_RATE = 5;     // リピート間隔（ms）- 極限高速化
+    static const unsigned long REPEAT_DELAY = 250;   // 長押し開始までの遅延（ms）- 極限高速化
+    static const unsigned long REPEAT_RATE = 50;     // リピート間隔（ms）- 極限高速化
 
 
 public:
@@ -113,6 +113,9 @@ public:
     
     // パフォーマンス統計レポート
     void reportPerformanceStats();
+    
+    // 長押しリピート処理（publicメソッド）
+    void handleKeyRepeat();
 
 private:
     
@@ -137,7 +140,6 @@ private:
     void sendSingleCharacterFast(const String& character);  // 高速化版単一文字送信
     
     // 長押し処理用
-    void handleKeyRepeat();  // 長押しリピート処理
     void processKeyPress(const String& pressed_chars);  // キー押下処理（長押し対応）
     
     // EspUsbHostからの継承メソッド

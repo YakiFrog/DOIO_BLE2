@@ -178,18 +178,14 @@ void loop() {
     // USBタスクの実行（PythonアナライザーとBLE転送処理が内部で行われる）
     analyzer->task();
     
+    // 長押しリピート処理を高頻度で実行（重要！）
+    analyzer->handleKeyRepeat();
+    
     // ディスプレイのアイドル状態更新（定期的にチェック）
     static unsigned long lastIdleCheck = 0;
     if (millis() - lastIdleCheck > 1000) {  // 1秒ごとにチェック
         lastIdleCheck = millis();
         analyzer->updateDisplayIdle();
-    }
-    
-    // パフォーマンス統計レポート（10秒間隔）
-    static unsigned long lastStatsReport = 0;
-    if (millis() - lastStatsReport > 10000) {  // 10秒ごとにレポート
-        lastStatsReport = millis();
-        analyzer->reportPerformanceStats();
     }
     
     // 最小限の遅延（応答性最優先）
