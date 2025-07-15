@@ -81,9 +81,8 @@ private:
     unsigned long lastDisplayUpdate = 0;
     unsigned long lastKeyEventTime = 0;
 
-    // BLE送信用データ
-    String lastSentCharacters = "";
-    bool forceNextSend = false;
+    // BLE送信用（重複防止）
+    String lastSentChars = "";
 
 public:
     PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboard* bleKbd);
