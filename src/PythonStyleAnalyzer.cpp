@@ -457,77 +457,132 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     String display_chars = pressed_chars.length() > 0 ? pressed_chars : "None";
     updateDisplayWithKeys(display_hex, display_keys, display_chars, shift_pressed);
     
-    // BLE送信処理（改良版）
+    // BLE送信処理（新しく押されたキーのみ送信）
     if (bleKeyboard && bleKeyboard->isConnected()) {
         #if SERIAL_OUTPUT_ENABLED
         Serial.printf("BLE送信チェック: 前回='%s', 今回='%s'\n", 
                      lastSentCharacters.c_str(), pressed_chars.c_str());
         #endif
         
-        // 文字列の変化またはキーが新しく押された場合に送信
-        bool should_send = false;
-        
+        // 新しく押されたキーのみを特定して送信
         if (pressed_chars.length() > 0) {
-            // 新しい文字が押された場合
-            if (lastSentCharacters != pressed_chars) {
-                should_send = true;
-                #if SERIAL_OUTPUT_ENABLED
-                Serial.println("BLE送信理由: 新しい文字または文字の変化");
-                #endif
-            }
-        } else if (lastSentCharacters.length() > 0) {
-            // すべてのキーが離された場合
-            should_send = false;  // キーリリースは送信しない
-            #if SERIAL_OUTPUT_ENABLED
-            Serial.println("BLE送信スキップ: すべてのキーが離された");
-            #endif
-        }
-        
-        if (should_send) {
-            #if SERIAL_OUTPUT_ENABLED
-            Serial.printf("BLE送信開始: '%s'\n", pressed_chars.c_str());
-            #endif
-            
-            // 文字列を個別に送信
+            // 現在のキーリストを配列に変換
+            String current_keys[10];
+            int current_count = 0;
             int start = 0;
             int comma_pos = 0;
             
-            while ((comma_pos = pressed_chars.indexOf(", ", start)) != -1) {
-                String single_char = pressed_chars.substring(start, comma_pos);
-                single_char.trim();
-                
-                if (single_char.length() > 0) {
-                    sendSingleCharacter(single_char);
+            while ((comma_pos = pressed_chars.indexOf(", ", start)) != -1 && current_count < 10) {
+                String key = pressed_chars.substring(start, comma_pos);
+                key.trim();
+                if (key.length() > 0) {
+                    current_keys[current_count++] = key;
                 }
-                
                 start = comma_pos + 2;
             }
-            
-            // 最後の文字を処理
-            if (start < pressed_chars.length()) {
-                String single_char = pressed_chars.substring(start);
-                single_char.trim();
-                
-                if (single_char.length() > 0) {
-                    sendSingleCharacter(single_char);
+            if (start < pressed_chars.length() && current_count < 10) {
+                String key = pressed_chars.substring(start);
+                key.trim();
+                if (key.length() > 0) {
+                    current_keys[current_count++] = key;
                 }
+            }
+            
+            // 前回のキーリストを配列に変換
+            String last_keys[10];
+            int last_count = 0;
+            start = 0;
+            comma_pos = 0;
+            
+            while ((comma_pos = lastSentCharacters.indexOf(", ", start)) != -1 && last_count < 10) {
+                String key = lastSentCharacters.substring(start, comma_pos);
+                key.trim();
+                if (key.length() > 0) {
+                    last_keys[last_count++] = key;
+                }
+                start = comma_pos + 2;
+            }
+            if (start < lastSentCharacters.length() && last_count < 10) {
+                String key = lastSentCharacters.substring(start);
+                key.trim();
+                if (key.length() > 0) {
+                    last_keys[last_count++] = key;
+                }
+            }
+            
+            // 新しく押されたキーを特定
+            String new_keys_to_send = "";
+            for (int i = 0; i < current_count; i++) {
+                bool is_new = true;
+                for (int j = 0; j < last_count; j++) {
+                    if (current_keys[i] == last_keys[j]) {
+                        is_new = false;
+                        break;
+                    }
+                }
+                if (is_new) {
+                    if (new_keys_to_send.length() > 0) {
+                        new_keys_to_send += ", ";
+                    }
+                    new_keys_to_send += current_keys[i];
+                }
+            }
+            
+            // 新しく押されたキーのみを送信
+            if (new_keys_to_send.length() > 0) {
+                #if SERIAL_OUTPUT_ENABLED
+                Serial.printf("BLE送信開始（新しいキーのみ）: '%s'\n", new_keys_to_send.c_str());
+                #endif
+                
+                start = 0;
+                comma_pos = 0;
+                
+                while ((comma_pos = new_keys_to_send.indexOf(", ", start)) != -1) {
+                    String single_char = new_keys_to_send.substring(start, comma_pos);
+                    single_char.trim();
+                    
+                    if (single_char.length() > 0) {
+                        #if SERIAL_OUTPUT_ENABLED
+                        Serial.printf("BLE送信: '%s'\n", single_char.c_str());
+                        #endif
+                        sendSingleCharacter(single_char);
+                    }
+                    
+                    start = comma_pos + 2;
+                }
+                
+                // 最後の文字を処理
+                if (start < new_keys_to_send.length()) {
+                    String single_char = new_keys_to_send.substring(start);
+                    single_char.trim();
+                    
+                    if (single_char.length() > 0) {
+                        #if SERIAL_OUTPUT_ENABLED
+                        Serial.printf("BLE送信: '%s'\n", single_char.c_str());
+                        #endif
+                        sendSingleCharacter(single_char);
+                    }
+                }
+                
+                #if SERIAL_OUTPUT_ENABLED
+                Serial.println("BLE送信完了");
+                #endif
+            } else {
+                #if SERIAL_OUTPUT_ENABLED
+                Serial.println("BLE送信スキップ: 新しいキーなし（継続押し）");
+                #endif
             }
             
             // 送信済み文字列を更新
             lastSentCharacters = pressed_chars;
-            
-            #if SERIAL_OUTPUT_ENABLED
-            Serial.println("BLE送信完了");
-            #endif
         } else {
-            #if SERIAL_OUTPUT_ENABLED
-            Serial.println("BLE送信スキップ: 文字の変化なし");
-            #endif
-        }
-        
-        // キーが離された場合は送信済み文字列をクリア
-        if (pressed_chars.length() == 0) {
-            lastSentCharacters = "";
+            // すべてのキーが離された場合
+            if (lastSentCharacters.length() > 0) {
+                #if SERIAL_OUTPUT_ENABLED
+                Serial.println("BLE送信スキップ: すべてのキーが離された");
+                #endif
+                lastSentCharacters = "";
+            }
         }
     } else {
         #if SERIAL_OUTPUT_ENABLED
