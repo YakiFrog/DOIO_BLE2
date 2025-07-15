@@ -877,6 +877,9 @@ void PythonStyleAnalyzer::handleKeyRepeat() {
                          currentPressedChars.c_str(), keyCount, elapsed, effectiveRepeatDelay);
             #endif
             
+            // 長押し開始時に音を鳴らす
+            speakerController.playKeySound();
+            
             // 長押し開始時に即座に1回送信
             sendString(currentPressedChars);
         }
@@ -892,6 +895,9 @@ void PythonStyleAnalyzer::handleKeyRepeat() {
             Serial.printf("🔥 長押しリピート送信: '%s' (キー数: %d, 間隔: %lu ms, 総経過時間: %lu ms)\n", 
                          currentPressedChars.c_str(), keyCount, elapsed, totalElapsed);
             #endif
+            
+            // リピート送信時に音を鳴らす
+            speakerController.playKeySound();
             
             // 現在押されているキーを送信
             sendString(currentPressedChars);
