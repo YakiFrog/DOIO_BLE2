@@ -639,8 +639,64 @@ void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
         #endif
     }
     
-    // 送信後の短い待機時間
-    delay(10);
+    // 送信後の待機時間を削除（最高速化）
+    // delay(1);  // 完全撤廃
+}
+
+// 複数文字を効率的に送信する関数（高速化）
+void PythonStyleAnalyzer::sendString(const String& chars) {
+    if (!bleKeyboard->isConnected()) {
+        return;
+    }
+    
+    #if SERIAL_OUTPUT_ENABLED
+    Serial.printf("BLE送信（高速）: '%s'\n", chars.c_str());
+    #endif
+    
+    // カンマ区切りで分割して送信
+    int start = 0;
+    int comma_pos = 0;
+    
+    while ((comma_pos = chars.indexOf(", ", start)) != -1) {
+        String single_char = chars.substring(start, comma_pos);
+        single_char.trim();
+        if (single_char.length() > 0) {
+            sendSingleCharacterFast(single_char);
+        }
+        start = comma_pos + 2;
+    }
+    
+    // 最後の文字を送信
+    if (start < chars.length()) {
+        String single_char = chars.substring(start);
+        single_char.trim();
+        if (single_char.length() > 0) {
+            sendSingleCharacterFast(single_char);
+        }
+    }
+}
+
+// 高速化された単一文字送信関数（delay完全撤廃）
+void PythonStyleAnalyzer::sendSingleCharacterFast(const String& character) {
+    if (!bleKeyboard->isConnected()) {
+        return;
+    }
+    
+    if (character == "Enter") {
+        bleKeyboard->write('\n');
+    } else if (character == "Tab") {
+        bleKeyboard->write('\t');
+    } else if (character == "Space" || character == " ") {
+        bleKeyboard->write(' ');
+    } else if (character == "Backspace") {
+        bleKeyboard->write(8);  // ASCII backspace
+    } else if (character.length() == 1) {
+        char c = character.charAt(0);
+        if (c >= 32 && c <= 126) {  // 印刷可能な文字のみ
+            bleKeyboard->write(c);
+        }
+    }
+    // delay完全撤廃
 }
 
 // デバイス接続時の処理（元のプログラムと同じ処理を追加）

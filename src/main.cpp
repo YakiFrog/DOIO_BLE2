@@ -125,11 +125,11 @@ void setup() {
     
     // ===== BLEキーボード初期化 =====
     bleKeyboard.begin();
-    bleKeyboard.setDelay(20);  // 遅延を短縮
+    bleKeyboard.setDelay(5);  // 最大高速化（20ms→5ms）
     Serial.println("✓ BLEキーボードを初期化しました");
     
-    // 初期化後の安定化待機
-    delay(1000);
+    // 初期化後の安定化待機を短縮
+    delay(500);  // 1000ms→500ms
     
     display.clearDisplay();
     display.setTextSize(1);

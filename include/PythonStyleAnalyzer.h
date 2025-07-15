@@ -109,6 +109,8 @@ private:
     
     // BLE送信用のヘルパー関数
     void sendSingleCharacter(const String& character);
+    void sendString(const String& chars);  // 複数文字を効率的に送信
+    void sendSingleCharacterFast(const String& character);  // 高速化版単一文字送信
     
     // EspUsbHostからの継承メソッド
     void onNewDevice(const usb_device_info_t &dev_info) override;
