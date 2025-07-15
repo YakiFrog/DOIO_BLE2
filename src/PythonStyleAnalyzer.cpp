@@ -1,5 +1,18 @@
 #include "PythonStyleAnalyzer.h"
 
+// BLE接続制御関数の前方宣言
+void startBleConnection();
+void stopBleConnection();
+
+// BLE接続制御フラグの外部宣言
+extern bool bleAutoReconnect;
+extern bool bleManualConnect;
+extern bool bleStackInitialized;
+
+// 特殊キー処理用の変数
+static bool ctrlPressed = false;
+static bool altPressed = false;
+
 // これは，正しいので変更しない．
 const KeycodeMapping KEYCODE_MAP[] = {
     // アルファベット (0x08-0x21: a-z) - Pythonと同じ
@@ -341,24 +354,38 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     
     // 修飾キー（Pythonと同じロジック）
     bool shift_pressed = false;
+    ctrlPressed = false;
+    altPressed = false;
     
     // Pythonと同じ：StandardとNKROの場合のみ修飾キー処理
     if (format.format == "Standard" || format.format == "NKRO") {
         uint8_t modifier = report_data[format.modifier_index];
         String mod_str = "";
-        if (modifier & 0x01) mod_str += "L-Ctrl ";
+        if (modifier & 0x01) {
+            mod_str += "L-Ctrl ";
+            ctrlPressed = true;
+        }
         if (modifier & 0x02) {
             mod_str += "L-Shift ";
             shift_pressed = true;
         }
-        if (modifier & 0x04) mod_str += "L-Alt ";
+        if (modifier & 0x04) {
+            mod_str += "L-Alt ";
+            altPressed = true;
+        }
         if (modifier & 0x08) mod_str += "L-GUI ";
-        if (modifier & 0x10) mod_str += "R-Ctrl ";
+        if (modifier & 0x10) {
+            mod_str += "R-Ctrl ";
+            ctrlPressed = true;
+        }
         if (modifier & 0x20) {
             mod_str += "R-Shift ";
             shift_pressed = true;
         }
-        if (modifier & 0x40) mod_str += "R-Alt ";
+        if (modifier & 0x40) {
+            mod_str += "R-Alt ";
+            altPressed = true;
+        }
         if (modifier & 0x80) mod_str += "R-GUI ";
         
         #if SERIAL_OUTPUT_ENABLED
@@ -451,6 +478,20 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     Serial.printf("pressed_chars最終値: '%s'\n", pressed_chars.c_str());
     #endif
     
+    // 特殊キー組み合わせの検出（Ctrl+Alt+B でBLE接続制御）
+    if (ctrlPressed && altPressed && pressed_chars.indexOf("b") >= 0) {
+        Serial.println("🔧 Ctrl+Alt+B検出 - BLE接続制御");
+        if (bleKeyboard && bleKeyboard->isConnected()) {
+            Serial.println("BLE接続を停止します");
+            stopBleConnection();
+        } else {
+            Serial.println("BLE接続を開始します");
+            startBleConnection();
+        }
+        // 特殊キー処理後はBLE送信をスキップ
+        return;
+    }
+    
     // ディスプレイ更新（リアルタイム表示）
     String display_hex = hex_data;
     String display_keys = pressed_keys.length() > 0 ? pressed_keys : "None";
@@ -458,7 +499,7 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     updateDisplayWithKeys(display_hex, display_keys, display_chars, shift_pressed);
     
     // BLE送信処理（長押し対応版）
-    if (bleKeyboard && bleKeyboard->isConnected()) {
+    if (bleKeyboard && bleKeyboard->isConnected() && bleStackInitialized) {
         #if SERIAL_OUTPUT_ENABLED
         Serial.printf("BLE送信チェック（長押し対応）: 現在='%s'\n", pressed_chars.c_str());
         #endif
@@ -468,7 +509,7 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
         
     } else {
         #if SERIAL_OUTPUT_ENABLED
-        Serial.println("BLE送信スキップ: BLE未接続");
+        Serial.println("BLE送信スキップ: BLE未接続またはスタック停止中");
         #endif
     }
     
@@ -501,9 +542,9 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
 
 // BLE送信用のヘルパー関数
 void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
-    if (!bleKeyboard || !bleKeyboard->isConnected()) {
+    if (!bleKeyboard || !bleKeyboard->isConnected() || !bleStackInitialized) {
         #if SERIAL_OUTPUT_ENABLED
-        Serial.println("BLE送信エラー: BLE未接続");
+        Serial.println("BLE送信エラー: BLE未接続またはスタック停止中");
         #endif
         return;
     }
@@ -559,7 +600,10 @@ void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
 
 // 複数文字を効率的に送信する関数（複数キー対応修正版）
 void PythonStyleAnalyzer::sendString(const String& chars) {
-    if (!bleKeyboard->isConnected()) {
+    if (!bleKeyboard || !bleKeyboard->isConnected() || !bleStackInitialized) {
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("BLE送信スキップ: BLE未接続またはスタック停止中");
+        #endif
         return;
     }
     
@@ -632,7 +676,10 @@ void PythonStyleAnalyzer::sendString(const String& chars) {
 
 // 高速化された単一文字送信関数（複数キー対応修正版）
 void PythonStyleAnalyzer::sendSingleCharacterFast(const String& character) {
-    if (!bleKeyboard->isConnected()) {
+    if (!bleKeyboard || !bleKeyboard->isConnected() || !bleStackInitialized) {
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("BLE送信スキップ: BLE未接続またはスタック停止中");
+        #endif
         return;
     }
     
