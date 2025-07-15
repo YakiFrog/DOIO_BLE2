@@ -457,54 +457,82 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     String display_chars = pressed_chars.length() > 0 ? pressed_chars : "None";
     updateDisplayWithKeys(display_hex, display_keys, display_chars, shift_pressed);
     
-    // BLE送信処理（解析済み文字を直接送信）
+    // BLE送信処理（改良版）
     if (bleKeyboard && bleKeyboard->isConnected()) {
-        // 前回のレポートと比較して変更があった場合のみ送信
-        bool has_changes = false;
-        if (has_last_report) {
-            for (int i = 0; i < data_size; i++) {
-                if (last_report[i] != report_data[i]) {
-                    has_changes = true;
-                    break;
-                }
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.printf("BLE送信チェック: 前回='%s', 今回='%s'\n", 
+                     lastSentCharacters.c_str(), pressed_chars.c_str());
+        #endif
+        
+        // 文字列の変化またはキーが新しく押された場合に送信
+        bool should_send = false;
+        
+        if (pressed_chars.length() > 0) {
+            // 新しい文字が押された場合
+            if (lastSentCharacters != pressed_chars) {
+                should_send = true;
+                #if SERIAL_OUTPUT_ENABLED
+                Serial.println("BLE送信理由: 新しい文字または文字の変化");
+                #endif
             }
-        } else {
-            has_changes = true; // 最初のレポート
+        } else if (lastSentCharacters.length() > 0) {
+            // すべてのキーが離された場合
+            should_send = false;  // キーリリースは送信しない
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.println("BLE送信スキップ: すべてのキーが離された");
+            #endif
         }
         
-        if (has_changes && pressed_chars.length() > 0) {
-            // pressed_chars（解析済みの文字）をカンマで分割して送信
-            String chars_to_send = pressed_chars;
-            
+        if (should_send) {
             #if SERIAL_OUTPUT_ENABLED
-            Serial.printf("BLE送信対象文字列: '%s'\n", chars_to_send.c_str());
+            Serial.printf("BLE送信開始: '%s'\n", pressed_chars.c_str());
             #endif
             
-            // カンマ区切りで文字を分割して送信
+            // 文字列を個別に送信
             int start = 0;
             int comma_pos = 0;
             
-            while ((comma_pos = chars_to_send.indexOf(", ", start)) != -1) {
-                String single_char = chars_to_send.substring(start, comma_pos);
+            while ((comma_pos = pressed_chars.indexOf(", ", start)) != -1) {
+                String single_char = pressed_chars.substring(start, comma_pos);
                 single_char.trim();
                 
                 if (single_char.length() > 0) {
                     sendSingleCharacter(single_char);
                 }
                 
-                start = comma_pos + 2;  // ", "の長さ分進める
+                start = comma_pos + 2;
             }
             
             // 最後の文字を処理
-            if (start < chars_to_send.length()) {
-                String single_char = chars_to_send.substring(start);
+            if (start < pressed_chars.length()) {
+                String single_char = pressed_chars.substring(start);
                 single_char.trim();
                 
                 if (single_char.length() > 0) {
                     sendSingleCharacter(single_char);
                 }
             }
+            
+            // 送信済み文字列を更新
+            lastSentCharacters = pressed_chars;
+            
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.println("BLE送信完了");
+            #endif
+        } else {
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.println("BLE送信スキップ: 文字の変化なし");
+            #endif
         }
+        
+        // キーが離された場合は送信済み文字列をクリア
+        if (pressed_chars.length() == 0) {
+            lastSentCharacters = "";
+        }
+    } else {
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("BLE送信スキップ: BLE未接続");
+        #endif
     }
     
     // 変更の検出（Pythonと同じロジック）
@@ -537,36 +565,59 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
 // BLE送信用のヘルパー関数
 void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
     if (!bleKeyboard || !bleKeyboard->isConnected()) {
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("BLE送信エラー: BLE未接続");
+        #endif
         return;
     }
     
     #if SERIAL_OUTPUT_ENABLED
-    Serial.printf("BLE送信: '%s'\n", character.c_str());
+    Serial.printf("BLE送信開始: '%s'\n", character.c_str());
     #endif
     
     // 特殊文字の処理
     if (character == "Enter" || character == "\n") {
         bleKeyboard->write('\n');
-        Serial.println("  -> Enter送信");
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("  -> Enter送信完了");
+        #endif
     } else if (character == "Tab" || character == "\t") {
         bleKeyboard->write('\t');
-        Serial.println("  -> Tab送信");
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("  -> Tab送信完了");
+        #endif
     } else if (character == "Space" || character == " ") {
         bleKeyboard->write(' ');
-        Serial.println("  -> Space送信");
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("  -> Space送信完了");
+        #endif
     } else if (character == "Backspace") {
         bleKeyboard->write(8);  // ASCII backspace
-        Serial.println("  -> Backspace送信");
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("  -> Backspace送信完了");
+        #endif
     } else if (character.length() == 1) {
         // 単一文字の場合はそのまま送信
         char c = character.charAt(0);
-        bleKeyboard->write(c);
-        Serial.printf("  -> 文字 '%c' (0x%02X) 送信\n", c, (uint8_t)c);
+        if (c >= 32 && c <= 126) {  // 印刷可能な文字のみ
+            bleKeyboard->write(c);
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("  -> 文字 '%c' (0x%02X) 送信完了\n", c, (uint8_t)c);
+            #endif
+        } else {
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("  -> 印刷不可能な文字 0x%02X をスキップ\n", (uint8_t)c);
+            #endif
+        }
     } else {
-        // 複数文字や特殊キーの場合は文字列として送信
-        bleKeyboard->print(character);
-        Serial.printf("  -> 文字列 '%s' 送信\n", character.c_str());
+        // 複数文字の場合は制御キーなどなのでスキップ
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.printf("  -> 制御キー '%s' をスキップ\n", character.c_str());
+        #endif
     }
+    
+    // 送信後の短い待機時間
+    delay(10);
 }
 
 // デバイス接続時の処理（元のプログラムと同じ処理を追加）
