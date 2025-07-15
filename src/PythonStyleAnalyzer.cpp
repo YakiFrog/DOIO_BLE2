@@ -926,6 +926,10 @@ void PythonStyleAnalyzer::processKeyPress(const String& pressed_chars) {
         Serial.printf("🔑 新しいキー押下: '%s' (開始時刻: %lu ms)\n", pressed_chars.c_str(), keyPressStartTime);
         #endif
         
+        // LEDとスピーカーを制御
+        ledController.keyPressed();
+        speakerController.playKeySound();
+        
         // 初回送信（常に送信する - 高速化）
         #if SERIAL_OUTPUT_ENABLED
         Serial.printf("🔑 初回送信: '%s'\n", pressed_chars.c_str());

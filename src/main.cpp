@@ -24,6 +24,7 @@
 #endif
 
 #include "PythonStyleAnalyzer.h"
+#include "Peripherals.h"
 
 // SSD1306ディスプレイ設定
 #define SCREEN_WIDTH 128
@@ -59,6 +60,13 @@ void setup() {
     Wire.begin(SDA_PIN, SCL_PIN);
     Wire.setClock(400000);  // 高速I2C
     delay(100);
+    
+    // LEDとスピーカーの初期化
+    ledController.begin();
+    speakerController.begin();
+    
+    // 起動音を再生
+    speakerController.playStartupMelody();
     
     // ディスプレイ初期化
     if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -180,6 +188,26 @@ void loop() {
     
     // 長押しリピート処理を高頻度で実行（重要！）
     analyzer->handleKeyRepeat();
+    
+    // LEDの更新処理
+    ledController.updateKeyLED();
+    ledController.updateStatusLED();
+    
+    // BLE接続状態の監視とLED制御
+    static bool lastBleConnected = false;
+    bool currentBleConnected = bleKeyboard.isConnected();
+    if (lastBleConnected != currentBleConnected) {
+        lastBleConnected = currentBleConnected;
+        ledController.setBleConnected(currentBleConnected);
+        
+        if (currentBleConnected) {
+            Serial.println("BLE接続しました");
+            speakerController.playConnectedSound();
+        } else {
+            Serial.println("BLE切断しました");
+            speakerController.playDisconnectedSound();
+        }
+    }
     
     // ディスプレイのアイドル状態更新（定期的にチェック）
     static unsigned long lastIdleCheck = 0;

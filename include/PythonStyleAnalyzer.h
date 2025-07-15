@@ -24,6 +24,7 @@
 #endif
 
 #include "EspUsbHost.h"
+#include "Peripherals.h"
 
 // DOIO KB16デバイス情報
 #define DOIO_VID 0xD010
