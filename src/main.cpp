@@ -125,8 +125,8 @@ void setup() {
     
     // ===== BLEキーボード初期化 =====
     bleKeyboard.begin();
-    bleKeyboard.setDelay(5);  // 最大高速化（20ms→5ms）
-    Serial.println("✓ BLEキーボードを初期化しました");
+    bleKeyboard.setDelay(1);  // 極限高速化（5ms→1ms）
+    Serial.println("✓ BLEキーボードを初期化しました（極限高速設定）");
     
     // 初期化後の安定化待機を短縮
     delay(500);  // 1000ms→500ms
@@ -178,13 +178,18 @@ void loop() {
     // USBタスクの実行（PythonアナライザーとBLE転送処理が内部で行われる）
     analyzer->task();
     
-
-    
     // ディスプレイのアイドル状態更新（定期的にチェック）
     static unsigned long lastIdleCheck = 0;
     if (millis() - lastIdleCheck > 1000) {  // 1秒ごとにチェック
         lastIdleCheck = millis();
         analyzer->updateDisplayIdle();
+    }
+    
+    // パフォーマンス統計レポート（10秒間隔）
+    static unsigned long lastStatsReport = 0;
+    if (millis() - lastStatsReport > 10000) {  // 10秒ごとにレポート
+        lastStatsReport = millis();
+        analyzer->reportPerformanceStats();
     }
     
     // 最小限の遅延（応答性最優先）

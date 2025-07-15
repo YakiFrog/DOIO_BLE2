@@ -83,12 +83,36 @@ private:
 
     // BLE送信用（重複防止）
     String lastSentChars = "";
+    
+    // BLE送信タイミング計測用
+    unsigned long lastBleTransmissionTime = 0;
+    unsigned long bleTransmissionCount = 0;
+    
+    // パフォーマンス統計用
+    unsigned long minTransmissionInterval = 999999;
+    unsigned long maxTransmissionInterval = 0;
+    unsigned long totalTransmissionInterval = 0;
+    unsigned long intervalCount = 0;
+    unsigned long lastStatsReport = 0;
+    static const unsigned long STATS_REPORT_INTERVAL = 10000;  // 10秒間隔で統計レポート
+    
+    // 長押し検出用
+    String currentPressedChars = "";
+    unsigned long keyPressStartTime = 0;
+    unsigned long lastRepeatTime = 0;
+    bool isRepeating = false;
+    static const unsigned long REPEAT_DELAY = 30;   // 長押し開始までの遅延（ms）- 極限高速化
+    static const unsigned long REPEAT_RATE = 5;     // リピート間隔（ms）- 極限高速化
+
 
 public:
     PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboard* bleKbd);
     
     // アイドル状態のディスプレイ更新（publicメソッド）
     void updateDisplayIdle();
+    
+    // パフォーマンス統計レポート
+    void reportPerformanceStats();
 
 private:
     
@@ -111,6 +135,10 @@ private:
     void sendSingleCharacter(const String& character);
     void sendString(const String& chars);  // 複数文字を効率的に送信
     void sendSingleCharacterFast(const String& character);  // 高速化版単一文字送信
+    
+    // 長押し処理用
+    void handleKeyRepeat();  // 長押しリピート処理
+    void processKeyPress(const String& pressed_chars);  // キー押下処理（長押し対応）
     
     // EspUsbHostからの継承メソッド
     void onNewDevice(const usb_device_info_t &dev_info) override;

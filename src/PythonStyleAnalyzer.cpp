@@ -69,6 +69,9 @@ PythonStyleAnalyzer::PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboard* bl
 void PythonStyleAnalyzer::updateDisplayIdle() {
     if (!display) return;
     
+    // 長押し処理を定期実行
+    handleKeyRepeat();
+    
     // 3秒間キー入力がない場合はアイドル表示
     if (millis() - lastKeyEventTime > 3000) {
         display->clearDisplay();
@@ -457,101 +460,15 @@ void PythonStyleAnalyzer::prettyPrintReport(const uint8_t* report_data, int data
     String display_chars = pressed_chars.length() > 0 ? pressed_chars : "None";
     updateDisplayWithKeys(display_hex, display_keys, display_chars, shift_pressed);
     
-    // BLE送信処理（完全重複防止版）
+    // BLE送信処理（長押し対応版）
     if (bleKeyboard && bleKeyboard->isConnected()) {
         #if SERIAL_OUTPUT_ENABLED
-        Serial.printf("BLE送信チェック: 現在='%s', 前回='%s'\n", 
-                     pressed_chars.c_str(), lastSentChars.c_str());
+        Serial.printf("BLE送信チェック（長押し対応）: 現在='%s'\n", pressed_chars.c_str());
         #endif
         
-        // 前回と完全に異なる場合のみ送信
-        if (pressed_chars != lastSentChars) {
-            if (pressed_chars.length() > 0) {
-                #if SERIAL_OUTPUT_ENABLED
-                Serial.printf("BLE送信開始（完全重複防止）: '%s'\n", pressed_chars.c_str());
-                #endif
-                
-                // 現在の文字を配列に分割
-                String current_chars[10];
-                int current_count = 0;
-                int start = 0;
-                int comma_pos = 0;
-                
-                while ((comma_pos = pressed_chars.indexOf(", ", start)) != -1 && current_count < 10) {
-                    String single_char = pressed_chars.substring(start, comma_pos);
-                    single_char.trim();
-                    if (single_char.length() > 0) {
-                        current_chars[current_count++] = single_char;
-                    }
-                    start = comma_pos + 2;
-                }
-                if (start < pressed_chars.length() && current_count < 10) {
-                    String single_char = pressed_chars.substring(start);
-                    single_char.trim();
-                    if (single_char.length() > 0) {
-                        current_chars[current_count++] = single_char;
-                    }
-                }
-                
-                // 前回の文字を配列に分割
-                String last_chars[10];
-                int last_count = 0;
-                start = 0;
-                comma_pos = 0;
-                
-                while ((comma_pos = lastSentChars.indexOf(", ", start)) != -1 && last_count < 10) {
-                    String single_char = lastSentChars.substring(start, comma_pos);
-                    single_char.trim();
-                    if (single_char.length() > 0) {
-                        last_chars[last_count++] = single_char;
-                    }
-                    start = comma_pos + 2;
-                }
-                if (start < lastSentChars.length() && last_count < 10) {
-                    String single_char = lastSentChars.substring(start);
-                    single_char.trim();
-                    if (single_char.length() > 0) {
-                        last_chars[last_count++] = single_char;
-                    }
-                }
-                
-                // 新しい文字のみを送信
-                for (int i = 0; i < current_count; i++) {
-                    bool is_new = true;
-                    for (int j = 0; j < last_count; j++) {
-                        if (current_chars[i] == last_chars[j]) {
-                            is_new = false;
-                            break;
-                        }
-                    }
-                    if (is_new) {
-                        #if SERIAL_OUTPUT_ENABLED
-                        Serial.printf("BLE送信（新規）: '%s'\n", current_chars[i].c_str());
-                        #endif
-                        sendSingleCharacter(current_chars[i]);
-                    } else {
-                        #if SERIAL_OUTPUT_ENABLED
-                        Serial.printf("BLE送信スキップ（既存）: '%s'\n", current_chars[i].c_str());
-                        #endif
-                    }
-                }
-                
-                #if SERIAL_OUTPUT_ENABLED
-                Serial.println("BLE送信完了");
-                #endif
-            } else {
-                #if SERIAL_OUTPUT_ENABLED
-                Serial.println("BLE送信スキップ: キーリリース");
-                #endif
-            }
-            
-            // 送信した文字列を記録
-            lastSentChars = pressed_chars;
-        } else {
-            #if SERIAL_OUTPUT_ENABLED
-            Serial.println("BLE送信スキップ: 完全重複");
-            #endif
-        }
+        // 長押し処理を実行
+        processKeyPress(pressed_chars);
+        
     } else {
         #if SERIAL_OUTPUT_ENABLED
         Serial.println("BLE送信スキップ: BLE未接続");
@@ -649,9 +566,29 @@ void PythonStyleAnalyzer::sendString(const String& chars) {
         return;
     }
     
+    unsigned long currentTime = millis();
+    unsigned long interval = (lastBleTransmissionTime == 0) ? 0 : currentTime - lastBleTransmissionTime;
+    
+    // 統計情報の更新
+    if (interval > 0) {
+        if (interval < minTransmissionInterval) minTransmissionInterval = interval;
+        if (interval > maxTransmissionInterval) maxTransmissionInterval = interval;
+        totalTransmissionInterval += interval;
+        intervalCount++;
+    }
+    
     #if SERIAL_OUTPUT_ENABLED
-    Serial.printf("BLE送信（高速）: '%s'\n", chars.c_str());
+    Serial.printf("BLE送信（極限高速）: '%s' (前回送信からの経過時間: %lu ms)\n", chars.c_str(), interval);
     #endif
+    
+    lastBleTransmissionTime = currentTime;
+    bleTransmissionCount++;
+    
+    // 統計レポート（10秒間隔）
+    if (currentTime - lastStatsReport >= STATS_REPORT_INTERVAL) {
+        reportPerformanceStats();
+        lastStatsReport = currentTime;
+    }
     
     // カンマ区切りで分割して送信
     int start = 0;
@@ -682,6 +619,8 @@ void PythonStyleAnalyzer::sendSingleCharacterFast(const String& character) {
         return;
     }
     
+    unsigned long startTime = millis();
+    
     if (character == "Enter") {
         bleKeyboard->write('\n');
     } else if (character == "Tab") {
@@ -696,7 +635,18 @@ void PythonStyleAnalyzer::sendSingleCharacterFast(const String& character) {
             bleKeyboard->write(c);
         }
     }
-    // delay完全撤廃
+    
+    unsigned long endTime = millis();
+    unsigned long bleTransmissionTime = endTime - startTime;
+    
+    #if SERIAL_OUTPUT_ENABLED
+    if (bleTransmissionTime > 0) {
+        Serial.printf("  BLE送信実行時間: %lu ms (文字: '%s')\n", bleTransmissionTime, character.c_str());
+    }
+    #endif
+    
+    // 最小限の安定化待機（マイクロ秒レベル）
+    delayMicroseconds(500);  // 0.5ms
 }
 
 // デバイス接続時の処理（元のプログラムと同じ処理を追加）
@@ -870,4 +820,113 @@ void PythonStyleAnalyzer::processRawReport16Bytes(const uint8_t* data) {
     
     // Pythonと同じ処理フローを呼び出し
     prettyPrintReport(data, 16);
+}
+
+// 長押しリピート処理
+void PythonStyleAnalyzer::handleKeyRepeat() {
+    if (currentPressedChars.length() == 0) {
+        isRepeating = false;
+        return;
+    }
+    
+    unsigned long currentTime = millis();
+    
+    if (!isRepeating) {
+        // 長押し開始判定（極限高速化：30ms）
+        unsigned long elapsed = currentTime - keyPressStartTime;
+        if (elapsed >= REPEAT_DELAY) {
+            isRepeating = true;
+            lastRepeatTime = currentTime;
+            
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("長押しリピート開始（超極限高速）: '%s' (経過時間: %lu ms)\n", 
+                         currentPressedChars.c_str(), elapsed);
+            #endif
+        }
+    } else {
+        // リピート送信（極限高速化：5ms間隔）
+        unsigned long elapsed = currentTime - lastRepeatTime;
+        if (elapsed >= REPEAT_RATE) {
+            lastRepeatTime = currentTime;
+            
+            unsigned long totalElapsed = currentTime - keyPressStartTime;
+            
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("長押しリピート送信（超極限高速）: '%s' (間隔: %lu ms, 総経過時間: %lu ms)\n", 
+                         currentPressedChars.c_str(), elapsed, totalElapsed);
+            #endif
+            
+            // 現在押されているキーを送信
+            sendString(currentPressedChars);
+        }
+    }
+}
+
+// キー押下処理（長押し対応）
+void PythonStyleAnalyzer::processKeyPress(const String& pressed_chars) {
+    if (pressed_chars.length() == 0) {
+        // キーリリース
+        if (currentPressedChars.length() > 0) {
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.println("キーリリース検出: " + currentPressedChars);
+            #endif
+            currentPressedChars = "";
+            isRepeating = false;
+            // キーリリース時に即座にlastSentCharsをクリア（高速連続押し対応）
+            lastSentChars = "";
+        }
+        return;
+    }
+    
+    // 新しいキー押下または継続
+    if (pressed_chars != currentPressedChars) {
+        // 新しいキー押下
+        currentPressedChars = pressed_chars;
+        keyPressStartTime = millis();
+        isRepeating = false;
+        
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("新しいキー押下: " + pressed_chars);
+        #endif
+        
+        // 初回送信（常に送信する - 高速化）
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("初回送信（高速）: " + pressed_chars);
+        #endif
+        sendString(pressed_chars);
+        
+        // 送信後に即座に履歴を更新（高速連続押し対応）
+        lastSentChars = pressed_chars;
+    }
+    // 同じキーが継続中の場合はhandleKeyRepeat()で処理
+}
+
+// パフォーマンス統計レポート
+void PythonStyleAnalyzer::reportPerformanceStats() {
+    if (intervalCount == 0) {
+        return;
+    }
+    
+    unsigned long avgInterval = totalTransmissionInterval / intervalCount;
+    
+    #if SERIAL_OUTPUT_ENABLED
+    Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    Serial.println("【BLE送信パフォーマンス統計】");
+    Serial.printf("  総送信回数: %lu 回\n", bleTransmissionCount);
+    Serial.printf("  送信間隔統計 (直近 %lu 回):\n", intervalCount);
+    Serial.printf("    - 最小間隔: %lu ms\n", minTransmissionInterval);
+    Serial.printf("    - 最大間隔: %lu ms\n", maxTransmissionInterval);
+    Serial.printf("    - 平均間隔: %lu ms\n", avgInterval);
+    Serial.printf("  長押しリピート設定:\n");
+    Serial.printf("    - 初期遅延: 30 ms\n");
+    Serial.printf("    - リピート間隔: 5 ms\n");
+    Serial.printf("  BLEライブラリ遅延: 1 ms\n");
+    Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    #endif
+    
+    // 統計をリセット
+    minTransmissionInterval = 999999;
+    maxTransmissionInterval = 0;
+    totalTransmissionInterval = 0;
+    intervalCount = 0;
 }
