@@ -85,34 +85,53 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
     // 3秒間キー入力がない場合はアイドル表示
     if (millis() - lastKeyEventTime > 3000) {
         display->clearDisplay();
-        display->setTextSize(1);
         display->setTextColor(SSD1306_WHITE);
-        display->setCursor(0, 0);
         
         if (isConnected) {
-            display->println("USB->BLE Bridge");
+            // 中央に大きく待機表示
+            display->setTextSize(2);
+            display->setCursor(30, 10);  // 中央寄せ調整
+            display->println("READY");
             
-            // BLE接続状態を表示
+            // 下部に状態情報
+            display->setTextSize(1);
+            display->setCursor(0, 35);
+            display->println("USB: Connected");
+            
+            display->setCursor(0, 45);
+            display->print("BLE:");
             if (bleKeyboard && bleKeyboard->isConnected()) {
-                display->println("BLE: Connected");
+                display->print("OK");
             } else {
-                display->println("BLE: Disconnected");
+                display->print("--");
             }
             
-            display->println("");
-            display->println("Ready for keys");
-            display->print("Uptime: ");
+            display->setCursor(70, 45);
+            display->print("SHIFT:--");
+            
+            display->setCursor(0, 55);
+            display->print("Uptime:");
             display->print(millis() / 1000);
-            display->println("s");
+            display->print("s");
         } else {
-            display->println("DOIO KB16 Bridge");
-            display->println("================");
-            display->println("");
-            display->println("Waiting for USB");
-            display->println("keyboard...");
-            display->println("");
-            display->println("BLE will auto-");
-            display->println("forward keys");
+            // 中央に大きく待機表示
+            display->setTextSize(2);
+            display->setCursor(40, 10);  // 中央寄せ調整
+            display->println("WAIT");
+            
+            // 下部に状態情報
+            display->setTextSize(1);
+            display->setCursor(0, 35);
+            display->println("USB: Waiting...");
+            
+            display->setCursor(0, 45);
+            display->print("BLE:--");
+            
+            display->setCursor(70, 45);
+            display->print("SHIFT:--");
+            
+            display->setCursor(0, 55);
+            display->print("Connect KB16");
         }
         display->display();
     }
@@ -123,22 +142,33 @@ void PythonStyleAnalyzer::updateDisplayForDevice(const String& deviceType) {
     if (!display) return;
     
     display->clearDisplay();
-    display->setTextSize(1);
     display->setTextColor(SSD1306_WHITE);
-    display->setCursor(0, 0);
-    display->println("USB->BLE Bridge");
-    display->println(deviceType);
-    display->println("Connected!");
-    display->println("");
     
-    // BLE状態を表示
+    // 中央に大きく接続表示
+    display->setTextSize(2);
+    display->setCursor(5, 10);  // 中央寄せ調整
+    display->println("CONNECT");
+    
+    // 下部に状態情報
+    display->setTextSize(1);
+    display->setCursor(0, 35);
+    display->print("USB: ");
+    display->println(deviceType);
+    
+    display->setCursor(0, 45);
+    display->print("BLE:");
     if (bleKeyboard && bleKeyboard->isConnected()) {
-        display->println("BLE: Ready");
+        display->print("OK");
     } else {
-        display->println("BLE: Waiting");
+        display->print("--");
     }
     
-    display->println("Forwarding keys...");
+    display->setCursor(70, 45);
+    display->print("SHIFT:--");
+    
+    display->setCursor(0, 55);
+    display->print("Initializing...");
+    
     display->display();
 }
 
@@ -153,103 +183,95 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
     lastKeyEventTime = millis();
     
     display->clearDisplay();
-    display->setTextSize(1);
     display->setTextColor(SSD1306_WHITE);
-    display->setCursor(0, 0);
     
-    // HEXデータを連続表示（16バイト完全表示）
-    if (hexData.length() > 0) {
-        // バイト単位で分割して表示
-        String bytes[16];
-        int byteCount = 0;
-        String currentByte = "";
+    // メイン文字を大きく表示（画面中央上部）
+    if (characters.length() > 0 && characters != "None") {
+        // 表示する文字を決定
+        String displayText = "";
         
-        // HEXデータをバイト単位で分割
-        for (int i = 0; i < hexData.length() && byteCount < 16; i++) {
-            char c = hexData.charAt(i);
-            if (c == ' ') {
-                if (currentByte.length() > 0) {
-                    bytes[byteCount] = currentByte;
-                    byteCount++;
-                    currentByte = "";
-                }
-            } else {
-                currentByte += c;
-            }
-        }
-        // 最後のバイトを処理
-        if (currentByte.length() > 0 && byteCount < 16) {
-            bytes[byteCount] = currentByte;
-            byteCount++;
-        }
-        
-        // 7バイトずつ表示（画面幅に最適化）
-        String line1 = "";
-        String line2 = "";
-        String line3 = "";
-        
-        for (int i = 0; i < byteCount; i++) {
-            if (i < 7) {
-                if (line1.length() > 0) line1 += " ";
-                line1 += bytes[i];
-            } else if (i < 14) {
-                if (line2.length() > 0) line2 += " ";
-                line2 += bytes[i];
-            } else {
-                if (line3.length() > 0) line3 += " ";
-                line3 += bytes[i];
-            }
+        if (characters == "Space" || characters == " ") {
+            displayText = "SPC";
+        } else if (characters == "Enter" || characters == "\n") {
+            displayText = "ENT";
+        } else if (characters == "Tab" || characters == "\t") {
+            displayText = "TAB";
+        } else if (characters == "Backspace") {
+            displayText = "BS";
+        } else if (characters == "Delete") {
+            displayText = "DEL";
+        } else if (characters == "Escape") {
+            displayText = "ESC";
+        } else if (characters.startsWith("F") && characters.length() <= 3) {
+            // ファンクションキー (F1-F12)
+            displayText = characters;
+        } else if (characters.length() == 1) {
+            // 単一文字
+            displayText = characters;
+        } else if (characters.length() <= 8) {
+            // 8文字以下はそのまま表示
+            displayText = characters;
+        } else {
+            // 8文字を超える場合のみ省略
+            displayText = characters.substring(0, 8);
+            displayText += "..";
         }
         
-        display->println(line1);
-        if (line2.length() > 0) {
-            display->println(line2);
+        // 文字数に応じてサイズとポジションを調整（HEX削除により大きく表示）
+        if (displayText.length() <= 1) {
+            display->setTextSize(4);  // サイズを3から4に拡大
+            display->setCursor(50, 2);  // 1文字の場合は真ん中（上部に移動）
+        } else if (displayText.length() <= 3) {
+            display->setTextSize(3);  // サイズを2から3に拡大
+            display->setCursor(25, 5);  // 2-3文字の場合は中央寄り（上部に移動）
+        } else if (displayText.length() <= 8) {
+            display->setTextSize(2);  // サイズを1から2に拡大
+            display->setCursor(10, 8);  // 4-8文字の場合は左寄り（上部に移動）
+        } else {
+            display->setTextSize(1);  // サイズはそのまま
+            display->setCursor(5, 10);  // 9文字以上の場合は更に左寄り（上部に移動）
         }
-        if (line3.length() > 0) {
-            display->println(line3);
-        }
+        
+        display->print(displayText);
     } else {
-        display->println("No HEX data");
+        // キーが離されている場合は「---」を表示
+        display->setTextSize(2);
+        display->setCursor(45, 8);  // 中央配置（調整）
+        display->print("---");
     }
     
-    // キー名（短縮表示）
+    // 下部に情報を小さく表示（HEX削除により位置を上に移動）
+    display->setTextSize(1);
+    
+    // BLE接続状況とSHIFT状況を同じ行に表示
+    display->setCursor(0, 35);
+    display->print("BLE:");
+    if (bleKeyboard && bleKeyboard->isConnected()) {
+        display->print("OK");
+    } else {
+        display->print("--");
+    }
+    
+    // SHIFT状況を右側に表示
+    display->setCursor(70, 35);
+    display->print("SHIFT:");
+    if (shiftPressed) {
+        display->print("ON");
+    } else {
+        display->print("--");
+    }
+    
+    // キー名を最下部に表示（参考情報）
+    display->setCursor(0, 45);
     display->print("Key:");
     if (keyNames.length() > 0) {
         String shortKeys = keyNames;
-        if (shortKeys.length() > 20) {
-            shortKeys = shortKeys.substring(0, 17) + "...";
+        if (shortKeys.length() > 16) {
+            shortKeys = shortKeys.substring(0, 13) + "...";
         }
-        display->println(shortKeys);
+        display->print(shortKeys);
     } else {
-        display->println("None");
-    }
-    
-    // 文字表示を追加
-    display->print("Char:");
-    if (characters.length() > 0) {
-        String shortChars = characters;
-        if (shortChars.length() > 19) {
-            shortChars = shortChars.substring(0, 16) + "...";
-        }
-        display->println(shortChars);
-    } else {
-        display->println("None");
-    }
-    
-    // BLE転送状態を表示
-    display->print("BLE:");
-    if (bleKeyboard && bleKeyboard->isConnected()) {
-        display->println("Sent");
-    } else {
-        display->println("Wait");
-    }
-    
-    // Shiftキー状態を右下に表示
-    display->setCursor(105, 48);  // 位置を少し上に調整
-    if (shiftPressed) {
-        display->print("SH");
-    } else {
-        display->print("--");
+        display->print("None");
     }
     
     display->display();
