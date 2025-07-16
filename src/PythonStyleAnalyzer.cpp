@@ -89,9 +89,17 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
         
         if (isConnected) {
             // 中央に大きく待機表示
-            display->setTextSize(2);
-            display->setCursor(30, 10);  // 中央寄せ調整
-            display->println("READY");
+            int textSize = 2;
+            String displayText = "READY";
+            
+            // 文字幅を計算して中央配置
+            int charWidth = 6 * textSize;
+            int totalWidth = charWidth * displayText.length();
+            int xPos = (SCREEN_WIDTH - totalWidth) / 2;
+            
+            display->setTextSize(textSize);
+            display->setCursor(xPos, 10);
+            display->println(displayText);
             
             // 下部に状態情報
             display->setTextSize(1);
@@ -115,9 +123,17 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
             display->print("s");
         } else {
             // 中央に大きく待機表示
-            display->setTextSize(2);
-            display->setCursor(40, 10);  // 中央寄せ調整
-            display->println("WAIT");
+            int textSize = 2;
+            String displayText = "WAIT";
+            
+            // 文字幅を計算して中央配置
+            int charWidth = 6 * textSize;
+            int totalWidth = charWidth * displayText.length();
+            int xPos = (SCREEN_WIDTH - totalWidth) / 2;
+            
+            display->setTextSize(textSize);
+            display->setCursor(xPos, 10);
+            display->println(displayText);
             
             // 下部に状態情報
             display->setTextSize(1);
@@ -145,9 +161,17 @@ void PythonStyleAnalyzer::updateDisplayForDevice(const String& deviceType) {
     display->setTextColor(SSD1306_WHITE);
     
     // 中央に大きく接続表示
-    display->setTextSize(2);
-    display->setCursor(5, 10);  // 中央寄せ調整
-    display->println("CONNECT");
+    int textSize = 2;
+    String displayText = "CONNECT";
+    
+    // 文字幅を計算して中央配置
+    int charWidth = 6 * textSize;
+    int totalWidth = charWidth * displayText.length();
+    int xPos = (SCREEN_WIDTH - totalWidth) / 2;
+    
+    display->setTextSize(textSize);
+    display->setCursor(xPos, 10);
+    display->println(displayText);
     
     // 下部に状態情報
     display->setTextSize(1);
@@ -217,27 +241,77 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
             displayText += "..";
         }
         
-        // 文字数に応じてサイズとポジションを調整（HEX削除により大きく表示）
+        // 文字数に応じてサイズを決定し、中央配置を計算
+        int textSize;
+        int yPos;
+        String finalDisplayText = displayText;
+        
+        // 各サイズで表示可能かチェックして最適なサイズを決定
         if (displayText.length() <= 1) {
-            display->setTextSize(4);  // サイズを3から4に拡大
-            display->setCursor(50, 2);  // 1文字の場合は真ん中（上部に移動）
-        } else if (displayText.length() <= 3) {
-            display->setTextSize(3);  // サイズを2から3に拡大
-            display->setCursor(25, 5);  // 2-3文字の場合は中央寄り（上部に移動）
-        } else if (displayText.length() <= 8) {
-            display->setTextSize(2);  // サイズを1から2に拡大
-            display->setCursor(10, 8);  // 4-8文字の場合は左寄り（上部に移動）
+            textSize = 4;
+            yPos = 2;
         } else {
-            display->setTextSize(1);  // サイズはそのまま
-            display->setCursor(5, 10);  // 9文字以上の場合は更に左寄り（上部に移動）
+            // サイズ3でフィットするかチェック
+            int size3Width = 6 * 3 * displayText.length();
+            if (size3Width <= SCREEN_WIDTH) {
+                textSize = 3;
+                yPos = 5;
+            } else {
+                // サイズ2でフィットするかチェック
+                int size2Width = 6 * 2 * displayText.length();
+                if (size2Width <= SCREEN_WIDTH) {
+                    textSize = 2;
+                    yPos = 8;
+                } else {
+                    // サイズ1でフィットするかチェック
+                    int size1Width = 6 * 1 * displayText.length();
+                    if (size1Width <= SCREEN_WIDTH) {
+                        textSize = 1;
+                        yPos = 10;
+                    } else {
+                        // サイズ1でも収まらない場合は省略
+                        textSize = 1;
+                        yPos = 10;
+                        // 画面幅に収まる文字数を計算
+                        int maxChars = SCREEN_WIDTH / (6 * 1);
+                        if (displayText.length() > maxChars - 2) {  // ".."分を考慮
+                            finalDisplayText = displayText.substring(0, maxChars - 2) + "..";
+                        }
+                    }
+                }
+            }
         }
         
-        display->print(displayText);
+        // 文字幅を計算して中央配置
+        // SSD1306フォントサイズ1の場合: 幅=6px, 高さ=8px
+        // フォントサイズが大きくなるとその倍数になる
+        int charWidth = 6 * textSize;
+        int totalWidth = charWidth * finalDisplayText.length();
+        int xPos = (SCREEN_WIDTH - totalWidth) / 2;
+        
+        // 画面からはみ出る場合は左端に配置
+        if (xPos < 0) {
+            xPos = 0;
+        }
+        
+        display->setTextSize(textSize);
+        display->setCursor(xPos, yPos);
+        
+        display->print(finalDisplayText);
     } else {
         // キーが離されている場合は「---」を表示
-        display->setTextSize(2);
-        display->setCursor(45, 8);  // 中央配置（調整）
-        display->print("---");
+        int textSize = 2;
+        int yPos = 8;
+        String displayText = "---";
+        
+        // 文字幅を計算して中央配置
+        int charWidth = 6 * textSize;
+        int totalWidth = charWidth * displayText.length();
+        int xPos = (SCREEN_WIDTH - totalWidth) / 2;
+        
+        display->setTextSize(textSize);
+        display->setCursor(xPos, yPos);
+        display->print(displayText);
     }
     
     // 下部に情報を小さく表示（HEX削除により位置を上に移動）

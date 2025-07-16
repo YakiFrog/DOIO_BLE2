@@ -34,6 +34,10 @@
 #define DEBUG_ENABLED 1
 #define SERIAL_OUTPUT_ENABLED 1
 
+// ディスプレイ設定
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+
 // パフォーマンス設定
 #define USB_TASK_INTERVAL 0
 #define DISPLAY_UPDATE_INTERVAL 50
