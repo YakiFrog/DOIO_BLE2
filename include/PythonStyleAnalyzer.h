@@ -143,6 +143,7 @@ private:
     void sendSingleCharacter(const String& character);
     void sendString(const String& chars);  // 複数文字を効率的に送信
     void sendSingleCharacterFast(const String& character);  // 高速化版単一文字送信
+    void sendSpecialKey(uint8_t keycode, const String& keyName);  // 特殊キー送信用（press+release方式）
     
     // 長押し処理用
     void processKeyPress(const String& pressed_chars);  // キー押下処理（長押し対応）

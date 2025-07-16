@@ -644,7 +644,7 @@ void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
         #endif
         return;
     }
-    
+
     #if SERIAL_OUTPUT_ENABLED
     Serial.printf("BLE送信開始: '%s'\n", character.c_str());
     #endif
@@ -670,6 +670,59 @@ void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
         #if SERIAL_OUTPUT_ENABLED
         Serial.println("  -> Backspace送信完了");
         #endif
+    } else if (character == "Delete") {
+        sendSpecialKey(KEY_DELETE, "Delete");
+    } else if (character == "Left") {
+        sendSpecialKey(KEY_LEFT_ARROW, "Left");
+    } else if (character == "Right") {
+        sendSpecialKey(KEY_RIGHT_ARROW, "Right");
+    } else if (character == "Up") {
+        sendSpecialKey(KEY_UP_ARROW, "Up");
+    } else if (character == "Down") {
+        sendSpecialKey(KEY_DOWN_ARROW, "Down");
+    } else if (character == "Home") {
+        sendSpecialKey(KEY_HOME, "Home");
+    } else if (character == "End") {
+        sendSpecialKey(KEY_END, "End");
+    } else if (character == "PageUp") {
+        sendSpecialKey(KEY_PAGE_UP, "PageUp");
+    } else if (character == "PageDown") {
+        sendSpecialKey(KEY_PAGE_DOWN, "PageDown");
+    } else if (character == "Insert") {
+        sendSpecialKey(KEY_INSERT, "Insert");
+    } else if (character == "Esc") {
+        sendSpecialKey(KEY_ESC, "Esc");
+    } else if (character.startsWith("F") && character.length() <= 3) {
+        // ファンクションキーの処理
+        if (character == "F1") {
+            sendSpecialKey(KEY_F1, "F1");
+        } else if (character == "F2") {
+            sendSpecialKey(KEY_F2, "F2");
+        } else if (character == "F3") {
+            sendSpecialKey(KEY_F3, "F3");
+        } else if (character == "F4") {
+            sendSpecialKey(KEY_F4, "F4");
+        } else if (character == "F5") {
+            sendSpecialKey(KEY_F5, "F5");
+        } else if (character == "F6") {
+            sendSpecialKey(KEY_F6, "F6");
+        } else if (character == "F7") {
+            sendSpecialKey(KEY_F7, "F7");
+        } else if (character == "F8") {
+            sendSpecialKey(KEY_F8, "F8");
+        } else if (character == "F9") {
+            sendSpecialKey(KEY_F9, "F9");
+        } else if (character == "F10") {
+            sendSpecialKey(KEY_F10, "F10");
+        } else if (character == "F11") {
+            sendSpecialKey(KEY_F11, "F11");
+        } else if (character == "F12") {
+            sendSpecialKey(KEY_F12, "F12");
+        } else {
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("  -> 未対応ファンクションキー: '%s'\n", character.c_str());
+            #endif
+        }
     } else if (character.length() == 1) {
         // 単一文字の場合はそのまま送信
         char c = character.charAt(0);
@@ -684,9 +737,9 @@ void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
             #endif
         }
     } else {
-        // 複数文字の場合は制御キーなどなのでスキップ
+        // 上記以外の制御キーなどはスキップ
         #if SERIAL_OUTPUT_ENABLED
-        Serial.printf("  -> 制御キー '%s' をスキップ\n", character.c_str());
+        Serial.printf("  -> 未対応制御キー '%s' をスキップ\n", character.c_str());
         #endif
     }
     
@@ -789,11 +842,76 @@ void PythonStyleAnalyzer::sendSingleCharacterFast(const String& character) {
         bleKeyboard->write(' ');
     } else if (character == "Backspace") {
         bleKeyboard->write(8);  // ASCII backspace
+    } else if (character == "Delete") {
+        sendSpecialKey(KEY_DELETE, "Delete");
+    } else if (character == "Left") {
+        sendSpecialKey(KEY_LEFT_ARROW, "Left");
+    } else if (character == "Right") {
+        sendSpecialKey(KEY_RIGHT_ARROW, "Right");
+    } else if (character == "Up") {
+        sendSpecialKey(KEY_UP_ARROW, "Up");
+    } else if (character == "Down") {
+        sendSpecialKey(KEY_DOWN_ARROW, "Down");
+    } else if (character == "Home") {
+        sendSpecialKey(KEY_HOME, "Home");
+    } else if (character == "End") {
+        sendSpecialKey(KEY_END, "End");
+    } else if (character == "PageUp") {
+        sendSpecialKey(KEY_PAGE_UP, "PageUp");
+    } else if (character == "PageDown") {
+        sendSpecialKey(KEY_PAGE_DOWN, "PageDown");
+    } else if (character == "Insert") {
+        sendSpecialKey(KEY_INSERT, "Insert");
+    } else if (character == "Esc") {
+        sendSpecialKey(KEY_ESC, "Esc");
+    } else if (character.startsWith("F") && character.length() <= 3) {
+        // ファンクションキーの処理
+        if (character == "F1") {
+            sendSpecialKey(KEY_F1, "F1");
+        } else if (character == "F2") {
+            sendSpecialKey(KEY_F2, "F2");
+        } else if (character == "F3") {
+            sendSpecialKey(KEY_F3, "F3");
+        } else if (character == "F4") {
+            sendSpecialKey(KEY_F4, "F4");
+        } else if (character == "F5") {
+            sendSpecialKey(KEY_F5, "F5");
+        } else if (character == "F6") {
+            sendSpecialKey(KEY_F6, "F6");
+        } else if (character == "F7") {
+            sendSpecialKey(KEY_F7, "F7");
+        } else if (character == "F8") {
+            sendSpecialKey(KEY_F8, "F8");
+        } else if (character == "F9") {
+            sendSpecialKey(KEY_F9, "F9");
+        } else if (character == "F10") {
+            sendSpecialKey(KEY_F10, "F10");
+        } else if (character == "F11") {
+            sendSpecialKey(KEY_F11, "F11");
+        } else if (character == "F12") {
+            sendSpecialKey(KEY_F12, "F12");
+        } else {
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("  -> 未対応ファンクションキー: '%s'\n", character.c_str());
+            #endif
+        }
     } else if (character.length() == 1) {
         char c = character.charAt(0);
         if (c >= 32 && c <= 126) {  // 印刷可能な文字のみ
             bleKeyboard->write(c);
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("  -> 文字 '%c' (0x%02X) 送信完了\n", c, (uint8_t)c);
+            #endif
+        } else {
+            #if SERIAL_OUTPUT_ENABLED
+            Serial.printf("  -> 印刷不可能な文字 0x%02X をスキップ\n", (uint8_t)c);
+            #endif
         }
+    } else {
+        // 上記以外の制御キーなどはスキップ
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.printf("  -> 未対応制御キー '%s' をスキップ\n", character.c_str());
+        #endif
     }
     
     unsigned long endTime = millis();
@@ -1130,4 +1248,27 @@ void PythonStyleAnalyzer::reportPerformanceStats() {
     maxTransmissionInterval = 0;
     totalTransmissionInterval = 0;
     intervalCount = 0;
+}
+
+// 特殊キー送信用のヘルパー関数（press + release方式）
+void PythonStyleAnalyzer::sendSpecialKey(uint8_t keycode, const String& keyName) {
+    if (!bleKeyboard || !bleKeyboard->isConnected() || !bleStackInitialized) {
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("BLE送信エラー: BLE未接続またはスタック停止中");
+        #endif
+        return;
+    }
+    
+    #if SERIAL_OUTPUT_ENABLED
+    Serial.printf("特殊キー送信開始: '%s' (0x%02X)\n", keyName.c_str(), keycode);
+    #endif
+    
+    // press → release 方式で確実に送信
+    bleKeyboard->press(keycode);
+    delay(10);  // 短い押下時間を確保
+    bleKeyboard->release(keycode);
+    
+    #if SERIAL_OUTPUT_ENABLED
+    Serial.printf("  -> %s キー (0x%02X) 送信完了 (press+release方式)\n", keyName.c_str(), keycode);
+    #endif
 }
