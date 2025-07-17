@@ -47,10 +47,15 @@ const KeycodeMapping KEYCODE_MAP[] = {
     {0x3B, ".", ">"},
     {0x3C, "/", "?"},
     
-    // ファンクションキー (0x3E-0x49) - Pythonと同じ
+    // ファンクションキー (0x3E-0x45) - Pythonと同じ
     {0x3E, "F1", "F1"}, {0x3F, "F2", "F2"}, {0x40, "F3", "F3"},
     {0x41, "F4", "F4"}, {0x42, "F5", "F5"}, {0x43, "F6", "F6"},
-    {0x44, "F7", "F7"}, {0x45, "F8", "F8"}, {0x46, "F9", "F9"},
+    {0x44, "F7", "F7"}, {0x45, "F8", "F8"},
+
+    // PrintScreenキー (0x4A) - DOIOに追加対応
+    {0x4A, "PrintScreen", "PrintScreen"},
+
+    // 残りのファンクションキー (0x47-0x49)
     {0x47, "F10", "F10"}, {0x48, "F11", "F11"}, {0x49, "F12", "F12"},
     
     // 特殊キー (0x4D-0x56) - Pythonと同じ
@@ -226,6 +231,8 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
             displayText = "DEL";
         } else if (characters == "Escape") {
             displayText = "ESC";
+        } else if (characters == "PrintScreen") {
+            displayText = "PRTSC";
         } else if (characters.startsWith("F") && characters.length() <= 3) {
             // ファンクションキー (F1-F12)
             displayText = characters;
@@ -692,6 +699,11 @@ void PythonStyleAnalyzer::sendSingleCharacter(const String& character) {
         sendSpecialKey(KEY_INSERT, "Insert");
     } else if (character == "Esc") {
         sendSpecialKey(KEY_ESC, "Esc");
+    } else if (character == "PrintScreen") {
+        sendSpecialKey(KEY_PRTSC, "PrintScreen");
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("  -> PrintScreen送信完了");
+        #endif
     } else if (character.startsWith("F") && character.length() <= 3) {
         // ファンクションキーの処理
         if (character == "F1") {
@@ -864,6 +876,11 @@ void PythonStyleAnalyzer::sendSingleCharacterFast(const String& character) {
         sendSpecialKey(KEY_INSERT, "Insert");
     } else if (character == "Esc") {
         sendSpecialKey(KEY_ESC, "Esc");
+    } else if (character == "PrintScreen") {
+        sendSpecialKey(KEY_PRTSC, "PrintScreen");
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("  -> PrintScreen送信完了");
+        #endif
     } else if (character.startsWith("F") && character.length() <= 3) {
         // ファンクションキーの処理
         if (character == "F1") {
@@ -1263,7 +1280,18 @@ void PythonStyleAnalyzer::sendSpecialKey(uint8_t keycode, const String& keyName)
     Serial.printf("特殊キー送信開始: '%s' (0x%02X)\n", keyName.c_str(), keycode);
     #endif
     
-    // press → release 方式で確実に送信
+    // PrintScreenキーの場合、少し長めの押下時間を確保
+    if (keycode == KEY_PRTSC) {
+        #if SERIAL_OUTPUT_ENABLED
+        Serial.println("PrintScreenキーを検出: 特別処理を適用");
+        #endif
+        bleKeyboard->press(keycode);
+        delay(20);  // PrintScreenキー用に少し長めの押下時間
+        bleKeyboard->release(keycode);
+        return;
+    }
+    
+    // 通常の特殊キー: press → release 方式で確実に送信
     bleKeyboard->press(keycode);
     delay(10);  // 短い押下時間を確保
     bleKeyboard->release(keycode);
