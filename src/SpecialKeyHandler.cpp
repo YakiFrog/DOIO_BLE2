@@ -11,6 +11,8 @@ extern QueueHandle_t displayQueue;
 void displayTask(void* pvParameters) {
     DisplayRequest req;
     static int lastDisplayType = -1; // 直前の表示タイプを記憶
+    static String lastText1 = "";    // 前回のtext1を記憶
+    static String lastText2 = "";    // 前回のtext2を記憶
     for (;;) {
         if (xQueueReceive(displayQueue, &req, portMAX_DELAY) == pdTRUE) {
             // 特別キー表示の直後はDISPLAY_NORMALをスキップ
@@ -50,7 +52,14 @@ void displayTask(void* pvParameters) {
                     req.display->drawStr(xPos2, yPos2, req.text2.c_str());
                 }
                 req.display->sendBuffer();
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                // キーが切り替わった場合はdelayなし
+                if (req.text1 != lastText1 || req.text2 != lastText2) {
+                    // 上書き表示（delayなし）
+                } else {
+                    vTaskDelay(1000 / portTICK_PERIOD_MS); // 1秒間表示
+                }
+                lastText1 = req.text1;
+                lastText2 = req.text2;
             } else if (req.type == DISPLAY_ANIMATION) {
                 int baseY = 0;
                 for (int i = 0; i < req.frames; ++i) {
@@ -59,7 +68,7 @@ void displayTask(void* pvParameters) {
                     req.display->clearBuffer();
                     req.display->drawXBMP(0, yOffset, req.bmp_w, req.bmp_h, req.bitmap);
                     req.display->sendBuffer();
-                    vTaskDelay(req.frameDelay / portTICK_PERIOD_MS);
+                    vTaskDelay(req.frameDelay / portTICK_PERIOD_MS); // フレーム間の遅延
                 }
                 req.display->clearBuffer();
                 req.display->drawXBMP(0, baseY, req.bmp_w, req.bmp_h, req.bitmap);
@@ -94,16 +103,17 @@ bool handleSpecialKeyDisplay(U8G2* display, const String& characters, const Stri
 
     DisplayRequest req;
     req.display = display;
+    // デフォルト値をまとめて設定
+    req.jumpHeight = 4;
+    req.frames = 6;
+    req.frameDelay = 60;
+    req.bmp_w = 128;
+    req.bmp_h = 64;
 
     if (prevCharacters == "s" && characters != "s") {
         if (characters == "3") {
             req.type = DISPLAY_ANIMATION;
             req.bitmap = epd_bitmap_faces_3_5;
-            req.bmp_w = 128;
-            req.bmp_h = 64;
-            req.jumpHeight = 4;
-            req.frames = 6;
-            req.frameDelay = 60;
             requestDisplay(req);
             return true;
         }
@@ -112,41 +122,21 @@ bool handleSpecialKeyDisplay(U8G2* display, const String& characters, const Stri
     if (characters == "1") {
         req.type = DISPLAY_ANIMATION;
         req.bitmap = epd_bitmap_faces_1;
-        req.bmp_w = 128;
-        req.bmp_h = 64;
-        req.jumpHeight = 4;
-        req.frames = 6;
-        req.frameDelay = 60;
         requestDisplay(req);
         return true;
     } else if (characters == "2") {
         req.type = DISPLAY_ANIMATION;
         req.bitmap = epd_bitmap_faces_2;
-        req.bmp_w = 128;
-        req.bmp_h = 64;
-        req.jumpHeight = 4;
-        req.frames = 6;
-        req.frameDelay = 60;
         requestDisplay(req);
         return true;
     } else if (characters == "3") {
         req.type = DISPLAY_ANIMATION;
         req.bitmap = epd_bitmap_faces_3;
-        req.bmp_w = 128;
-        req.bmp_h = 64;
-        req.jumpHeight = 4;
-        req.frames = 6;
-        req.frameDelay = 60;
         requestDisplay(req);
         return true;
     } else if (characters == "4") {
         req.type = DISPLAY_ANIMATION;
         req.bitmap = epd_bitmap_faces_4;
-        req.bmp_w = 128;
-        req.bmp_h = 64;
-        req.jumpHeight = 4;
-        req.frames = 6;
-        req.frameDelay = 60;
         requestDisplay(req);
         return true;
     } else if (characters == "s") {
