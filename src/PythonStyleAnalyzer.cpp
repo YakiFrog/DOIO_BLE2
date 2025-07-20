@@ -1,4 +1,5 @@
 #include "PythonStyleAnalyzer.h"
+#include "SpecialKeyHandler.h"
 
 // BLE接続制御関数の前方宣言
 void startBleConnection();
@@ -189,16 +190,28 @@ void PythonStyleAnalyzer::updateDisplayForDevice(const String& deviceType) {
     
     display->sendBuffer();
 }
- // キー押下時のディスプレイ更新
+
+// キー押下時のディスプレイ更新
 void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const String& keyNames, const String& characters, bool shiftPressed) {
     if (!display) return;
 
     lastHexData = hexData;
     lastKeyPresses = keyNames;
-    lastCharacters = characters;
+    // lastCharactersは前回のキーとして使う
+    String prevCharacters = lastCharacters;
+    // "None"の場合はlastCharactersを更新しない
+    if (characters != "None") {
+        lastCharacters = characters;
+    }
     lastKeyEventTime = millis();
 
     display->clearBuffer();
+
+    // 特定キー押下時の特別処理（前回のキーも渡す）
+    if (handleSpecialKeyDisplay(display, characters, prevCharacters)) {
+        // 特別処理が実行された場合は通常表示をスキップ
+        return;
+    }
 
     // メイン文字を大きく表示（画面中央上部）
     if (characters.length() > 0 && characters != "None") {
