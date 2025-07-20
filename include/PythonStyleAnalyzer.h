@@ -13,6 +13,8 @@
 #include <Wire.h>
 #include <U8g2lib.h>
 #include <BleKeyboard.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 // HID関連の定義の競合を防ぐため、再度チェック
 #ifdef HID_CLASS
@@ -120,6 +122,9 @@ public:
     
     // 長押しリピート処理（publicメソッド）
     void handleKeyRepeat();
+    
+    // 複数文字を効率的に送信
+    void sendString(const String& chars);  // 複数文字を効率的に送信
 
 private:
     
@@ -140,7 +145,6 @@ private:
     
     // BLE送信用のヘルパー関数
     void sendSingleCharacter(const String& character);
-    void sendString(const String& chars);  // 複数文字を効率的に送信
     void sendSingleCharacterFast(const String& character);  // 高速化版単一文字送信
     void sendSpecialKey(uint8_t keycode, const String& keyName);  // 特殊キー送信用（press+release方式）
     
@@ -154,6 +158,9 @@ private:
     void onReceive(const usb_transfer_t *transfer) override;
     void processRawReport16Bytes(const uint8_t* data) override;
 };
+
+// BLE送信キュー（他ファイルから参照可能に）
+extern QueueHandle_t bleSendQueue;
 
 // キーコードマッピングテーブルの宣言
 extern const KeycodeMapping KEYCODE_MAP[];

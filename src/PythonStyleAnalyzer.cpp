@@ -1,5 +1,11 @@
 #include "PythonStyleAnalyzer.h"
 #include "SpecialKeyHandler.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+
+// BLE送信キューの外部参照
+extern QueueHandle_t bleSendQueue;
+extern QueueHandle_t displayQueue;
 
 // BLE接続制御関数の前方宣言
 void startBleConnection();
@@ -197,142 +203,24 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
 
     lastHexData = hexData;
     lastKeyPresses = keyNames;
-    // lastCharactersは前回のキーとして使う
     String prevCharacters = lastCharacters;
-    // "None"の場合はlastCharactersを更新しない
     if (characters != "None") {
         lastCharacters = characters;
     }
     lastKeyEventTime = millis();
 
-    display->clearBuffer();
-
-    // 特定キー押下時の特別処理（前回のキーも渡す）
+    // 特別表示はhandleSpecialKeyDisplayでキューに入る
     if (handleSpecialKeyDisplay(display, characters, prevCharacters)) {
-        // 特別処理が実行された場合は通常表示をスキップ
         return;
     }
 
-    // メイン文字を大きく表示（画面中央上部）
-    if (characters.length() > 0 && characters != "None") {
-        String displayText = "";
-        
-        if (characters == "Space" || characters == " ") {
-            displayText = "SPC";
-        } else if (characters == "Enter" || characters == "\n") {
-            displayText = "ENT";
-        } else if (characters == "Tab" || characters == "\t") {
-            displayText = "TAB";
-        } else if (characters == "Backspace") {
-            displayText = "BS";
-        } else if (characters == "Delete") {
-            displayText = "DEL";
-        } else if (characters == "Escape") {
-            displayText = "ESC";
-        } else if (characters == "PrintScreen") {
-            displayText = "PRTSC";
-        } else if (characters.startsWith("F") && characters.length() <= 3) {
-            // ファンクションキー (F1-F12)
-            displayText = characters;
-        } else if (characters.length() == 1) {
-            // 単一文字
-            displayText = characters;
-        } else {
-            // 複数キー対応: 各キーごとに省略名へ変換
-            String temp = "";
-            int start = 0;
-            int comma_pos = 0;
-            int count = 0;
-            while ((comma_pos = characters.indexOf(", ", start)) != -1) {
-            String key = characters.substring(start, comma_pos);
-            key.trim();
-            if (key == "Space" || key == " ") key = "SPC";
-            else if (key == "Enter" || key == "\n") key = "ENT";
-            else if (key == "Tab" || key == "\t") key = "TAB";
-            else if (key == "Backspace") key = "BS";
-            else if (key == "Delete") key = "DEL";
-            else if (key == "Escape") key = "ESC";
-            else if (key == "PrintScreen") key = "PRTSC";
-            temp += key;
-            temp += ", ";
-            start = comma_pos + 2;
-            count++;
-            }
-            // 最後のキー
-            if (start < characters.length()) {
-            String key = characters.substring(start);
-            key.trim();
-            if (key == "Space" || key == " ") key = "SPC";
-            else if (key == "Enter" || key == "\n") key = "ENT";
-            else if (key == "Tab" || key == "\t") key = "TAB";
-            else if (key == "Backspace") key = "BS";
-            else if (key == "Delete") key = "DEL";
-            else if (key == "Escape") key = "ESC";
-            else if (key == "PrintScreen") key = "PRTSC";
-            temp += key;
-            }
-            displayText = temp;
-            // 10文字を超える場合のみ省略
-            if (displayText.length() > 10) {
-            displayText = displayText.substring(0, 10) + "..";
-            }
-        }
-        
-        const uint8_t* font;
-        int yPos;
-        if (displayText.length() <= 7) {
-            font = u8g2_font_fub25_tr; // 40px * 8 
-        } else if (displayText.length() <= 12) {
-            font = u8g2_font_fub17_tr;
-        } else {
-            font = u8g2_font_6x10_tr;
-        }
-        // メイン文字を上部に配置（下部情報とかぶらないように）
-        int fontHeight = (font == u8g2_font_fub25_tr) ? 32 : (font == u8g2_font_fub17_tr ? 22 : 10);
-        yPos = 16 + fontHeight / 2; // 24px付近に配置
-        display->setFont(font);
-
-        int totalWidth = display->getStrWidth(displayText.c_str());
-        int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-        if (xPos < 0) xPos = 0;
-
-        display->drawStr(xPos, yPos, displayText.c_str());
-    } else {
-        // キーが離されている場合は「---」を表示
-        display->setFont(u8g2_font_fub25_tr);
-        int totalWidth = display->getStrWidth("---");
-        int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-        display->drawStr(xPos, 32, "---");
-    }
-
-    // 下部に情報を小さく表示
-    display->setFont(u8g2_font_6x10_tr);
-
-    // BLE接続状況とSHIFT状況を同じ行に表示
-    display->drawStr(0, 52, "BLE:");
-    if (bleKeyboard && bleKeyboard->isConnected()) {
-        display->drawStr(30, 52, "OK");
-    } else {
-        display->drawStr(30, 52, "--");
-    }
-
-    // SHIFT状況を右側に表示
-    display->drawStr(70, 52, "SHIFT:");
-    if (shiftPressed) {
-        display->drawStr(110, 52, "ON");
-    } else {
-        display->drawStr(110, 52, "--");
-    }
-
-    // キー名を最下部に表示
-    display->drawStr(0, 62, "Key:");
-    String shortKeys = keyNames.length() > 0 ? keyNames : "None";
-    if (shortKeys.length() > 15) {
-        shortKeys = shortKeys.substring(0, 13) + "...";
-    }
-    display->drawStr(30, 62, shortKeys.c_str());
-
-    display->sendBuffer();
+    // 通常表示要求をキューに入れる
+    DisplayRequest req;
+    req.type = DISPLAY_NORMAL;
+    req.display = display;
+    req.text = keyNames.length() > 0 ? keyNames : "---";
+    req.font = u8g2_font_fub25_tr;
+    requestDisplay(req);
 }
 
 // Pythonのkeycode_to_string関数を完全移植
@@ -1193,7 +1081,11 @@ void PythonStyleAnalyzer::processKeyPress(const String& pressed_chars) {
         #if SERIAL_OUTPUT_ENABLED
         Serial.printf("🔑 初回送信: '%s'\n", pressed_chars.c_str());
         #endif
-        sendString(pressed_chars);
+        // BLE送信要求をキューに追加
+        if (bleSendQueue != NULL) {
+            String charsToSend = pressed_chars;
+            xQueueSend(bleSendQueue, &charsToSend, 0);
+        }
         
         // 送信後に即座に履歴を更新（高速連続押し対応）
         lastSentChars = pressed_chars;

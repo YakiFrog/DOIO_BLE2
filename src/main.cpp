@@ -18,6 +18,10 @@
 #include <esp_bt.h>
 #include <esp_bt_main.h>
 #include <esp_bt_device.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
+#include "SpecialKeyHandler.h"
 
 // HID関連の定義の競合を防ぐため、再度チェック
 #ifdef HID_CLASS
@@ -55,6 +59,23 @@ bool bleStackInitialized = false;  // BLEスタックの初期化状態
 // BLE接続制御関数の前方宣言
 void startBleConnection();
 void stopBleConnection();
+
+// BLE送信キュー
+QueueHandle_t bleSendQueue;
+QueueHandle_t displayQueue;
+
+// BLE送信タスク
+void bleSendTask(void* pvParameters) {
+    PythonStyleAnalyzer* analyzer = (PythonStyleAnalyzer*)pvParameters;
+    String sendChars;
+    for (;;) {
+        // キューから送信要求を受け取る
+        if (xQueueReceive(bleSendQueue, &sendChars, portMAX_DELAY) == pdTRUE) {
+            analyzer->sendString(sendChars);
+        }
+        vTaskDelay(1); // 負荷軽減
+    }
+}
 
 void setup() {
     setCpuFrequencyMhz(240);
@@ -123,6 +144,15 @@ void setup() {
 
     analyzer = new PythonStyleAnalyzer(&display, &bleKeyboard);
     analyzer->begin();
+
+    // BLE送信キュー作成
+    bleSendQueue = xQueueCreate(8, sizeof(String));
+    // BLE送信タスク開始
+    xTaskCreatePinnedToCore(bleSendTask, "bleSendTask", 4096, analyzer, 1, NULL, 1);
+
+    // ディスプレイ表示キューとタスク初期化
+    displayQueue = xQueueCreate(4, sizeof(DisplayRequest));
+    xTaskCreatePinnedToCore(displayTask, "displayTask", 4096, NULL, 1, NULL, 0);
 
     Serial.println("システム初期化完了");
     Serial.println("USBキーボードを接続してください...");
