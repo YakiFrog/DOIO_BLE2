@@ -10,8 +10,16 @@ extern QueueHandle_t displayQueue;
 // ディスプレイ専用タスク
 void displayTask(void* pvParameters) {
     DisplayRequest req;
+    static int lastDisplayType = -1; // 直前の表示タイプを記憶
     for (;;) {
         if (xQueueReceive(displayQueue, &req, portMAX_DELAY) == pdTRUE) {
+            // 特別キー表示の直後はDISPLAY_NORMALをスキップ
+            if (req.type == DISPLAY_NORMAL && 
+                (lastDisplayType == DISPLAY_TEXT || lastDisplayType == DISPLAY_ANIMATION)) {
+                // DISPLAY_NORMAL表示要求を無視して特別表示を維持
+                // 必要なら一定時間後に解除するロジックも追加可能
+                continue;
+            }
             if (req.type == DISPLAY_NORMAL) {
                 // 2行表示（メイン＋サブ）
                 req.display->clearBuffer();
@@ -33,6 +41,14 @@ void displayTask(void* pvParameters) {
                 req.display->clearBuffer();
                 req.display->setFont(req.font);
                 drawCenteredText(req.display, req.text1.c_str(), req.font);
+                if (!req.text2.isEmpty()) {
+                    req.display->setFont(u8g2_font_6x10_tr);
+                    int textWidth2 = req.display->getStrWidth(req.text2.c_str());
+                    int xPos2 = (128 - textWidth2) / 2;
+                    int fontHeight2 = req.display->getFontAscent() - req.display->getFontDescent();
+                    int yPos2 = 52 + fontHeight2 / 1.5; // 少し下に配置
+                    req.display->drawStr(xPos2, yPos2, req.text2.c_str());
+                }
                 req.display->sendBuffer();
                 vTaskDelay(1000 / portTICK_PERIOD_MS);
             } else if (req.type == DISPLAY_ANIMATION) {
@@ -49,8 +65,9 @@ void displayTask(void* pvParameters) {
                 req.display->drawXBMP(0, baseY, req.bmp_w, req.bmp_h, req.bitmap);
                 req.display->sendBuffer();
             }
+            lastDisplayType = req.type; // 表示タイプを記憶
         }
-        vTaskDelay(1);
+        vTaskDelay(1); // 負荷軽減のための短い待機
     }
 }
 
@@ -140,11 +157,73 @@ bool handleSpecialKeyDisplay(U8G2* display, const String& characters, const Stri
         return true;
     } else if (characters == "e") {
         req.type = DISPLAY_TEXT;
-        req.text1 = "ESCAPE!!";
+        req.text1 = "INTRO";
+        req.text2 = "Japanese or English";
         req.font = u8g2_font_fub14_tr;
         requestDisplay(req);
         return true;
-    }
+    } else if (characters == "b") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "BARK";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+        return true;
+    } else if (characters == "h") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "HAZARD";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+        return true;
+    } else if (characters == "t") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "AT/MT";
+        req.text2 = "TOGGLE";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+        return true;
+    } else if (characters == "Up") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "FORWARD";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+    } else if (characters == "Down") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "BACKWARD";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+    } else if (characters == "Left") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "TURN LEFT";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+    } else if (characters == "Right") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "TURN RIGHT";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+    } else if (characters == "Esc") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "ESCAPE";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+    } else if (characters == "PrintScreen") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "PRTSC";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+    } else if (characters == ",") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "STOP";
+        req.text2 = "LINEAR SPEED";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+    } else if (characters == ".") {
+        req.type = DISPLAY_TEXT;
+        req.text1 = "STOP";
+        req.text2 = "ANGULAR SPEED";
+        req.font = u8g2_font_fub14_tr;
+        requestDisplay(req);
+    }    
     return false;
 }
 

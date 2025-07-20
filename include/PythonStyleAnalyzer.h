@@ -81,7 +81,6 @@ private:
     // OLED表示用データ
     String lastHexData = "";
     String lastKeyPresses = "";
-    String currentPressedKeys = "";
     String lastCharacters = "";
     bool displayNeedsUpdate = false;
     unsigned long lastDisplayUpdate = 0;
@@ -103,7 +102,6 @@ private:
     static const unsigned long STATS_REPORT_INTERVAL = 10000;  // 10秒間隔で統計レポート
     
     // 長押し検出用
-    String currentPressedChars = "";
     unsigned long keyPressStartTime = 0;
     unsigned long lastRepeatTime = 0;
     bool isRepeating = false;
@@ -112,6 +110,7 @@ private:
 
 
 public:
+    String currentPressedChars = ""; // ← public側のみ残す
     PythonStyleAnalyzer(U8G2* disp, BleKeyboard* bleKbd);
     
     // アイドル状態のディスプレイ更新（publicメソッド）

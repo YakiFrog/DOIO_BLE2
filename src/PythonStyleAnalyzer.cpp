@@ -94,6 +94,11 @@ PythonStyleAnalyzer::PythonStyleAnalyzer(U8G2* disp, BleKeyboard* bleKbd)
 void PythonStyleAnalyzer::updateDisplayIdle() {
     if (!display) return;
     
+    // キーが押されている場合はアイドル表示をスキップ
+    if (currentPressedChars.length() > 0) {
+        return;
+    }
+
     // 3秒間キー入力がない場合はアイドル表示
     if (millis() - lastKeyEventTime > 3000) {
         display->clearBuffer();
