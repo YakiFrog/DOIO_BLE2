@@ -14,7 +14,7 @@ void displayTask(void* pvParameters) {
     static String lastText1 = "";    // 前回のtext1を記憶
     static String lastText2 = "";    // 前回のtext2を記憶
     static unsigned long lastTextChangeTime = 0; // 最後にキーが変わった時刻
-    const unsigned long TEXT_CHANGE_INTERVAL = 500; // 500ms以上変化がなければdelay
+    const unsigned long TEXT_CHANGE_INTERVAL = 1000; // 500ms以上変化がなければdelay
 
     for (;;) {
         if (xQueueReceive(displayQueue, &req, portMAX_DELAY) == pdTRUE) {
@@ -151,7 +151,7 @@ bool handleSpecialKeyDisplay(U8G2* display, const String& characters, const Stri
         return true;
     } else if (characters == "s") {
         req.type = DISPLAY_TEXT;
-        req.text1 = "SHIFT ON!!";
+        req.text1 = "SHIFT ON";
         req.font = u8g2_font_fub14_tr;
         requestDisplay(req);
         return true;
@@ -208,7 +208,7 @@ bool handleSpecialKeyDisplay(U8G2* display, const String& characters, const Stri
         requestDisplay(req);
     } else if (characters == "PrintScreen") {
         req.type = DISPLAY_TEXT;
-        req.text1 = "PRTSC";
+        req.text1 = "SCRNSHOT";
         req.font = u8g2_font_fub14_tr;
         requestDisplay(req);
     } else if (characters == ",") {

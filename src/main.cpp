@@ -110,14 +110,14 @@ void setup() {
 
     // プログラミングモード終了の表示
     display.clearBuffer();
-    display.setFont(u8g2_font_6x10_tr);
-    display.drawStr(0, 10, "USB->BLE Bridge");
-    display.drawStr(0, 22, "===============");
-    display.drawStr(0, 34, "Bridge Mode");
-    display.drawStr(0, 46, "ACTIVATED!");
-    display.drawStr(0, 58, "Initializing...");
-    display.sendBuffer();
-    delay(1000);
+    // display.setFont(u8g2_font_6x10_tr);
+    // display.drawStr(0, 10, "USB->BLE Bridge");
+    // display.drawStr(0, 22, "===============");
+    // display.drawStr(0, 34, "Bridge Mode");
+    // display.drawStr(0, 46, "ACTIVATED!");
+    // display.drawStr(0, 58, "Initializing...");
+    // display.sendBuffer();
+    // delay(1000);
 
     bleKeyboard.begin();
     bleKeyboard.setDelay(1);
@@ -129,18 +129,18 @@ void setup() {
     Serial.println("  - 起動時は自動接続有効");
     Serial.println("  - Ctrl+Alt+Bで手動制御に切り替え可能");
 
-    delay(500);
+    // delay(500);
 
-    display.clearBuffer();
-    display.setFont(u8g2_font_6x10_tr);
-    display.drawStr(0, 10, "USB->BLE Bridge");
-    display.drawStr(0, 22, "===============");
-    display.drawStr(0, 34, "BLE: Ready");
-    display.drawStr(0, 46, "USB: Waiting...");
-    display.drawStr(0, 58, "Connect keyboard");
-    display.sendBuffer();
+    // display.clearBuffer();
+    // display.setFont(u8g2_font_6x10_tr);
+    // display.drawStr(0, 10, "USB->BLE Bridge");
+    // display.drawStr(0, 22, "===============");
+    // display.drawStr(0, 34, "BLE: Ready");
+    // display.drawStr(0, 46, "USB: Waiting...");
+    // display.drawStr(0, 58, "Connect keyboard");
+    // display.sendBuffer();
 
-    delay(1000);
+    // delay(1000);
 
     analyzer = new PythonStyleAnalyzer(&display, &bleKeyboard);
     analyzer->begin();
@@ -163,20 +163,20 @@ void setup() {
     Serial.println("  Ctrl+Alt+B - BLE接続/切断の切り替え");
     Serial.println("  手動切断後は自動再接続が無効になります");
 
-    // 待機状態表示
-    display.clearBuffer();
-    display.setFont(u8g2_font_6x10_tr);
-    display.drawStr(0, 10, "DOIO KB16 Bridge");
-    display.drawStr(0, 22, "================");
-    if (bleKeyboard.isConnected()) {
-        display.drawStr(0, 34, "BLE: Connected");
-    } else {
-        display.drawStr(0, 34, "BLE: Waiting");
-    }
-    display.drawStr(0, 46, "USB: Waiting...");
-    display.drawStr(0, 58, "Connect USB kbd");
-    display.drawStr(0, 70, "to start bridge");
-    display.sendBuffer();
+    // // 待機状態表示
+    // display.clearBuffer();
+    // display.setFont(u8g2_font_6x10_tr);
+    // display.drawStr(0, 10, "DOIO KB16 Bridge");
+    // display.drawStr(0, 22, "================");
+    // if (bleKeyboard.isConnected()) {
+    //     display.drawStr(0, 34, "BLE: Connected");
+    // } else {
+    //     display.drawStr(0, 34, "BLE: Waiting");
+    // }
+    // display.drawStr(0, 46, "USB: Waiting...");
+    // display.drawStr(0, 58, "Connect USB kbd");
+    // display.drawStr(0, 70, "to start bridge");
+    // display.sendBuffer();
 }
 
 void loop() {
