@@ -11,8 +11,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <U8g2lib.h>
 #include <BleKeyboard.h>
 
 // HID関連の定義の競合を防ぐため、再度チェック
@@ -63,7 +62,7 @@ struct ReportFormat {
 // PythonアナライザーのUSBホストクラス（KB16認識対応修正版）
 class PythonStyleAnalyzer : public EspUsbHost {
 private:
-    Adafruit_SSD1306* display;
+    U8G2* display;
     BleKeyboard* bleKeyboard;
     
     // Pythonアナライザーの状態変数（完全一致）
@@ -111,7 +110,7 @@ private:
 
 
 public:
-    PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboard* bleKbd);
+    PythonStyleAnalyzer(U8G2* disp, BleKeyboard* bleKbd);
     
     // アイドル状態のディスプレイ更新（publicメソッド）
     void updateDisplayIdle();

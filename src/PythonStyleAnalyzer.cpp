@@ -78,7 +78,7 @@ const KeycodeMapping KEYCODE_MAP[] = {
 
 const int KEYCODE_MAP_SIZE = sizeof(KEYCODE_MAP) / sizeof(KeycodeMapping);
 
-PythonStyleAnalyzer::PythonStyleAnalyzer(Adafruit_SSD1306* disp, BleKeyboard* bleKbd) 
+PythonStyleAnalyzer::PythonStyleAnalyzer(U8G2* disp, BleKeyboard* bleKbd) 
     : display(disp), bleKeyboard(bleKbd) {
     memset(&report_format, 0, sizeof(report_format));
 }
@@ -89,29 +89,27 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
     
     // 3秒間キー入力がない場合はアイドル表示
     if (millis() - lastKeyEventTime > 3000) {
-        display->clearDisplay();
-        display->setTextColor(SSD1306_WHITE);
+        display->clearBuffer();
         
         if (isConnected) {
             // 中央に大きく待機表示
-            int textSize = 2;
             String displayText = "READY";
             
-            // 文字幅を計算して中央配置
-            int charWidth = 6 * textSize;
-            int totalWidth = charWidth * displayText.length();
+            // フォントサイズを設定
+            display->setFont(u8g2_font_fub14_tr);
+
+            // 文字幅を計算して左右中央配置
+            int totalWidth = display->getStrWidth(displayText.c_str());
             int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-            
-            display->setTextSize(textSize);
-            display->setCursor(xPos, 10);
-            display->println(displayText);
+            int yPos = SCREEN_HEIGHT / 2; // 画面の縦中央
+
+            display->drawStr(xPos, yPos, displayText.c_str());
             
             // 下部に状態情報
-            display->setTextSize(1);
-            display->setCursor(0, 35);
-            display->println("USB: Connected");
+            display->setFont(u8g2_font_6x10_tr);
+            display->drawStr(0, 48, "USB: Connected");
             
-            display->setCursor(0, 45);
+            display->setCursor(0, 55);
             display->print("BLE:");
             if (bleKeyboard && bleKeyboard->isConnected()) {
                 display->print("OK");
@@ -119,42 +117,41 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
                 display->print("--");
             }
             
-            display->setCursor(70, 45);
+            display->setCursor(70, 55);
             display->print("SHIFT:--");
             
-            display->setCursor(0, 55);
+            display->setCursor(0, 62);
             display->print("Uptime:");
             display->print(millis() / 1000);
             display->print("s");
         } else {
             // 中央に大きく待機表示
-            int textSize = 2;
             String displayText = "WAIT";
             
-            // 文字幅を計算して中央配置
-            int charWidth = 6 * textSize;
-            int totalWidth = charWidth * displayText.length();
+            // フォントサイズを設定
+            display->setFont(u8g2_font_fub14_tr);
+
+            // 文字幅を計算して左右中央配置
+            int totalWidth = display->getStrWidth(displayText.c_str());
             int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-            
-            display->setTextSize(textSize);
-            display->setCursor(xPos, 10);
-            display->println(displayText);
+            int yPos = SCREEN_HEIGHT / 2; // 画面の縦中央
+
+            display->drawStr(xPos, yPos, displayText.c_str());
             
             // 下部に状態情報
-            display->setTextSize(1);
-            display->setCursor(0, 35);
-            display->println("USB: Waiting...");
-            
-            display->setCursor(0, 45);
-            display->print("BLE:--");
-            
-            display->setCursor(70, 45);
-            display->print("SHIFT:--");
+            display->setFont(u8g2_font_6x10_tr);
+            display->drawStr(0, 48, "USB: Waiting...");
             
             display->setCursor(0, 55);
+            display->print("BLE:--");
+            
+            display->setCursor(70, 55);
+            display->print("SHIFT:--");
+            
+            display->setCursor(0, 62);
             display->print("Connect KB16");
         }
-        display->display();
+        display->sendBuffer();
     }
 }
 
@@ -162,61 +159,49 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
 void PythonStyleAnalyzer::updateDisplayForDevice(const String& deviceType) {
     if (!display) return;
     
-    display->clearDisplay();
-    display->setTextColor(SSD1306_WHITE);
+    display->clearBuffer();
     
-    // 中央に大きく接続表示
-    int textSize = 2;
+    // 中央に大きく接続表示（左右中央に配置）
     String displayText = "CONNECT";
-    
-    // 文字幅を計算して中央配置
-    int charWidth = 6 * textSize;
-    int totalWidth = charWidth * displayText.length();
+    display->setFont(u8g2_font_fub14_tr);
+    int totalWidth = display->getStrWidth(displayText.c_str());
     int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-    
-    display->setTextSize(textSize);
-    display->setCursor(xPos, 10);
-    display->println(displayText);
+    int yPos = SCREEN_HEIGHT / 2; // 画面の縦中央
+    display->drawStr(xPos, yPos, displayText.c_str());
     
     // 下部に状態情報
-    display->setTextSize(1);
-    display->setCursor(0, 35);
-    display->print("USB: ");
+    display->setFont(u8g2_font_6x10_tr);
+    display->drawStr(0, 48, "USB: ");
     display->println(deviceType);
     
-    display->setCursor(0, 45);
-    display->print("BLE:");
+    display->drawStr(0, 55, "BLE:");
     if (bleKeyboard && bleKeyboard->isConnected()) {
         display->print("OK");
     } else {
         display->print("--");
     }
     
-    display->setCursor(70, 45);
+    display->setCursor(70, 55);
     display->print("SHIFT:--");
     
-    display->setCursor(0, 55);
+    display->setCursor(0, 62);
     display->print("Initializing...");
     
-    display->display();
+    display->sendBuffer();
 }
-
-// キー押下時のディスプレイ更新
+ // キー押下時のディスプレイ更新
 void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const String& keyNames, const String& characters, bool shiftPressed) {
     if (!display) return;
-    
-    // 表示データを更新
+
     lastHexData = hexData;
     lastKeyPresses = keyNames;
     lastCharacters = characters;
     lastKeyEventTime = millis();
-    
-    display->clearDisplay();
-    display->setTextColor(SSD1306_WHITE);
-    
+
+    display->clearBuffer();
+
     // メイン文字を大きく表示（画面中央上部）
     if (characters.length() > 0 && characters != "None") {
-        // 表示する文字を決定
         String displayText = "";
         
         if (characters == "Space" || characters == " ") {
@@ -239,123 +224,70 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
         } else if (characters.length() == 1) {
             // 単一文字
             displayText = characters;
-        } else if (characters.length() <= 8) {
-            // 8文字以下はそのまま表示
+        } else if (characters.length() <= 10) {
+            // 10文字以下はそのまま表示
             displayText = characters;
         } else {
-            // 8文字を超える場合のみ省略
-            displayText = characters.substring(0, 8);
+            // 10文字を超える場合のみ省略
+            displayText = characters.substring(0, 10);
             displayText += "..";
         }
         
-        // 文字数に応じてサイズを決定し、中央配置を計算
-        int textSize;
+        const uint8_t* font;
         int yPos;
-        String finalDisplayText = displayText;
-        
-        // 各サイズで表示可能かチェックして最適なサイズを決定
-        if (displayText.length() <= 1) {
-            textSize = 4;
-            yPos = 2;
+        if (displayText.length() <= 8) {
+            font = u8g2_font_fub25_tr; // 40px * 8 
+        } else if (displayText.length() <= 10) {
+            font = u8g2_font_fub14_tr;
         } else {
-            // サイズ3でフィットするかチェック
-            int size3Width = 6 * 3 * displayText.length();
-            if (size3Width <= SCREEN_WIDTH) {
-                textSize = 3;
-                yPos = 5;
-            } else {
-                // サイズ2でフィットするかチェック
-                int size2Width = 6 * 2 * displayText.length();
-                if (size2Width <= SCREEN_WIDTH) {
-                    textSize = 2;
-                    yPos = 8;
-                } else {
-                    // サイズ1でフィットするかチェック
-                    int size1Width = 6 * 1 * displayText.length();
-                    if (size1Width <= SCREEN_WIDTH) {
-                        textSize = 1;
-                        yPos = 10;
-                    } else {
-                        // サイズ1でも収まらない場合は省略
-                        textSize = 1;
-                        yPos = 10;
-                        // 画面幅に収まる文字数を計算
-                        int maxChars = SCREEN_WIDTH / (6 * 1);
-                        if (displayText.length() > maxChars - 2) {  // ".."分を考慮
-                            finalDisplayText = displayText.substring(0, maxChars - 2) + "..";
-                        }
-                    }
-                }
-            }
+            font = u8g2_font_6x10_tr;
         }
-        
-        // 文字幅を計算して中央配置
-        // SSD1306フォントサイズ1の場合: 幅=6px, 高さ=8px
-        // フォントサイズが大きくなるとその倍数になる
-        int charWidth = 6 * textSize;
-        int totalWidth = charWidth * finalDisplayText.length();
+        // メイン文字を上部に配置（下部情報とかぶらないように）
+        int fontHeight = (font == u8g2_font_fub25_tr) ? 32 : (font == u8g2_font_fub14_tr ? 16 : 10);
+        yPos = 16 + fontHeight / 2; // 24px付近に配置
+        display->setFont(font);
+
+        int totalWidth = display->getStrWidth(displayText.c_str());
         int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-        
-        // 画面からはみ出る場合は左端に配置
-        if (xPos < 0) {
-            xPos = 0;
-        }
-        
-        display->setTextSize(textSize);
-        display->setCursor(xPos, yPos);
-        
-        display->print(finalDisplayText);
+        if (xPos < 0) xPos = 0;
+
+        display->drawStr(xPos, yPos, displayText.c_str());
     } else {
         // キーが離されている場合は「---」を表示
-        int textSize = 2;
-        int yPos = 8;
-        String displayText = "---";
-        
-        // 文字幅を計算して中央配置
-        int charWidth = 6 * textSize;
-        int totalWidth = charWidth * displayText.length();
+        display->setFont(u8g2_font_fub25_tr);
+        int totalWidth = display->getStrWidth("---");
         int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-        
-        display->setTextSize(textSize);
-        display->setCursor(xPos, yPos);
-        display->print(displayText);
+        display->drawStr(xPos, 32, "---");
     }
-    
-    // 下部に情報を小さく表示（HEX削除により位置を上に移動）
-    display->setTextSize(1);
-    
+
+    // 下部に情報を小さく表示
+    display->setFont(u8g2_font_6x10_tr);
+
     // BLE接続状況とSHIFT状況を同じ行に表示
-    display->setCursor(0, 35);
-    display->print("BLE:");
+    display->drawStr(0, 48, "BLE:");
     if (bleKeyboard && bleKeyboard->isConnected()) {
-        display->print("OK");
+        display->drawStr(30, 48, "OK");
     } else {
-        display->print("--");
+        display->drawStr(30, 48, "--");
     }
-    
+
     // SHIFT状況を右側に表示
-    display->setCursor(70, 35);
-    display->print("SHIFT:");
+    display->drawStr(70, 48, "SHIFT:");
     if (shiftPressed) {
-        display->print("ON");
+        display->drawStr(120, 48, "ON");
     } else {
-        display->print("--");
+        display->drawStr(120, 48, "--");
     }
-    
-    // キー名を最下部に表示（参考情報）
-    display->setCursor(0, 45);
-    display->print("Key:");
-    if (keyNames.length() > 0) {
-        String shortKeys = keyNames;
-        if (shortKeys.length() > 16) {
-            shortKeys = shortKeys.substring(0, 13) + "...";
-        }
-        display->print(shortKeys);
-    } else {
-        display->print("None");
+
+    // キー名を最下部に表示
+    display->drawStr(0, 62, "Key:");
+    String shortKeys = keyNames.length() > 0 ? keyNames : "None";
+    if (shortKeys.length() > 16) {
+        shortKeys = shortKeys.substring(0, 13) + "...";
     }
-    
-    display->display();
+    display->drawStr(40, 62, shortKeys.c_str());
+
+    display->sendBuffer();
 }
 
 // Pythonのkeycode_to_string関数を完全移植
@@ -1008,27 +940,25 @@ void PythonStyleAnalyzer::onGone(const usb_host_client_event_msg_t *eventMsg) {
     isConnected = false;
     has_last_report = false;
     report_format_initialized = false;
-    
+
     // BLEキーボードのキーをすべてリリース
     if (bleKeyboard) {
         bleKeyboard->releaseAll();
     }
-    
-    // ディスプレイを元の状態に戻す
+
+    // ディスプレイを元の状態に戻す（u8g2用に修正）
     if (display) {
-        display->clearDisplay();
-        display->setTextSize(1);
-        display->setTextColor(SSD1306_WHITE);
-        display->setCursor(0, 0);
-        display->println("USB->BLE Bridge");
-        display->println("");
-        display->println("Device");
-        display->println("DISCONNECTED");
-        display->println("");
-        display->println("BLE still active");
-        display->println("Waiting for USB");
-        display->println("device...");
-        display->display();
+        display->clearBuffer();
+        display->setFont(u8g2_font_6x10_tr);
+        display->drawStr(0, 10, "USB->BLE Bridge");
+        display->drawStr(0, 22, "");
+        display->drawStr(0, 34, "Device");
+        display->drawStr(0, 46, "DISCONNECTED");
+        display->drawStr(0, 58, "");
+        display->drawStr(0, 70, "BLE still active");
+        display->drawStr(0, 82, "Waiting for USB");
+        display->drawStr(0, 94, "device...");
+        display->sendBuffer();
     }
 }
 

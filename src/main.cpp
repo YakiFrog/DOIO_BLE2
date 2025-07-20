@@ -12,7 +12,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+// #include <Adafruit_SSD1306.h>
+#include <U8g2lib.h>
 #include <BleKeyboard.h>
 #include <esp_bt.h>
 #include <esp_bt_main.h>
@@ -41,7 +42,8 @@
 #define SCL_PIN 6
 
 // グローバル変数
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+// Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
 BleKeyboard bleKeyboard("DOIO KB16 Bridge", "DOIO Bridge", 100);
 PythonStyleAnalyzer* analyzer;
 
@@ -55,93 +57,73 @@ void startBleConnection();
 void stopBleConnection();
 
 void setup() {
-    // CPU最高速度で動作
     setCpuFrequencyMhz(240);
-    
+
     Serial.begin(115200);
     while (!Serial && millis() < 2000) {
         delay(100);
     }
-    
+
     Serial.println("=======================================");
     Serial.println("DOIO KB16 USB-to-BLE Bridge System");
     Serial.println("Python Compatible HID + BLE Forward");
     Serial.printf("CPU周波数: %d MHz\n", getCpuFrequencyMhz());
     Serial.println("=======================================");
-    
-    // I2C初期化
+
     Wire.begin(SDA_PIN, SCL_PIN);
-    Wire.setClock(400000);  // 高速I2C
+    Wire.setClock(400000);
     delay(100);
-    
-    // LEDとスピーカーの初期化
+
     ledController.begin();
     speakerController.begin();
-    
-    // 起動音を再生
     speakerController.playStartupMelody();
-    
-    // ディスプレイ初期化
-    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-        Serial.println("エラー: SSD1306初期化失敗");
-        while (true) delay(1000);
-    }
 
-    // ===== 5秒間の起動画面アニメーション =====
+    // U8G2初期化
+    display.begin();
+
+    // 起動画面アニメーション
     StartupAnimation startupAnim(&display);
     startupAnim.showStartupScreen();
 
     Serial.println("Programming mode finished. Starting Bridge mode...");
-    
+
     // プログラミングモード終了の表示
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("USB->BLE Bridge");
-    display.println("===============");
-    display.println("");
-    display.println("Bridge Mode");
-    display.println("ACTIVATED!");
-    display.println("");
-    display.println("Initializing...");
-    display.display();
+    display.clearBuffer();
+    display.setFont(u8g2_font_6x10_tr);
+    display.drawStr(0, 10, "USB->BLE Bridge");
+    display.drawStr(0, 22, "===============");
+    display.drawStr(0, 34, "Bridge Mode");
+    display.drawStr(0, 46, "ACTIVATED!");
+    display.drawStr(0, 58, "Initializing...");
+    display.sendBuffer();
     delay(1000);
-    
-    // ===== BLEキーボード初期化 =====
+
     bleKeyboard.begin();
-    bleKeyboard.setDelay(1);  // 極限高速化（5ms→1ms）
-    
-    // 起動時は自動接続を有効にする
+    bleKeyboard.setDelay(1);
+
     bleAutoReconnect = true;
     bleStackInitialized = true;
-    
+
     Serial.println("✓ BLEキーボードを初期化しました（自動接続モード）");
     Serial.println("  - 起動時は自動接続有効");
     Serial.println("  - Ctrl+Alt+Bで手動制御に切り替え可能");
-    
-    // 初期化後の安定化待機を短縮
-    delay(500);  // 1000ms→500ms
-    
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("USB->BLE Bridge");
-    display.println("===============");
-    display.println("");
-    display.println("BLE: Ready");
-    display.println("USB: Waiting...");
-    display.println("");
-    display.println("Connect keyboard");
-    display.display();
-    
+
+    delay(500);
+
+    display.clearBuffer();
+    display.setFont(u8g2_font_6x10_tr);
+    display.drawStr(0, 10, "USB->BLE Bridge");
+    display.drawStr(0, 22, "===============");
+    display.drawStr(0, 34, "BLE: Ready");
+    display.drawStr(0, 46, "USB: Waiting...");
+    display.drawStr(0, 58, "Connect keyboard");
+    display.sendBuffer();
+
     delay(1000);
-    
-    // ===== Pythonスタイルアナライザー初期化 =====
+
     analyzer = new PythonStyleAnalyzer(&display, &bleKeyboard);
     analyzer->begin();
-    
+
     Serial.println("システム初期化完了");
     Serial.println("USBキーボードを接続してください...");
     Serial.println("すべてのキー入力がBLEキーボードに自動転送されます");
@@ -150,25 +132,21 @@ void setup() {
     Serial.println("  起動時は自動接続が有効です");
     Serial.println("  Ctrl+Alt+B - BLE接続/切断の切り替え");
     Serial.println("  手動切断後は自動再接続が無効になります");
-    
+
     // 待機状態表示
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("DOIO KB16 Bridge");
-    display.println("================");
-    display.println("");
+    display.clearBuffer();
+    display.setFont(u8g2_font_6x10_tr);
+    display.drawStr(0, 10, "DOIO KB16 Bridge");
+    display.drawStr(0, 22, "================");
     if (bleKeyboard.isConnected()) {
-        display.println("BLE: Connected");
+        display.drawStr(0, 34, "BLE: Connected");
     } else {
-        display.println("BLE: Waiting");
+        display.drawStr(0, 34, "BLE: Waiting");
     }
-    display.println("USB: Waiting...");
-    display.println("");
-    display.println("Connect USB kbd");
-    display.println("to start bridge");
-    display.display();
+    display.drawStr(0, 46, "USB: Waiting...");
+    display.drawStr(0, 58, "Connect USB kbd");
+    display.drawStr(0, 70, "to start bridge");
+    display.sendBuffer();
 }
 
 void loop() {

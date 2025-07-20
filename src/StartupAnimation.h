@@ -1,40 +1,38 @@
 #pragma once
-#include <Adafruit_SSD1306.h>
+#include <U8g2lib.h>
 
 class StartupAnimation {
 public:
-    StartupAnimation(Adafruit_SSD1306* display)
+    StartupAnimation(U8G2* display)
         : display(display) {}
 
-    // テキストを左右中央に配置するためのX座標計算
-    int getCenterX(const char* text, int textSize = 1) {
-        int charWidth = 6 * textSize; // Adafruit_GFXの標準幅
-        int textPixelWidth = strlen(text) * charWidth;
-        int screenWidth = display->width();
+    // テキストを左右中央に配置するためのX座標計算（U8G2用）
+    int getCenterX(const char* text, const uint8_t* font) {
+        display->setFont(font);
+        int textPixelWidth = display->getStrWidth(text);
+        int screenWidth = display->getDisplayWidth();
         return (screenWidth - textPixelWidth) / 2;
     }
 
     // 5秒間の起動画面アニメーション
     void showStartupScreen() {
         for (int i = 5; i > 0; i--) {
-            display->clearDisplay();
-            display->setTextSize(2);
-            display->setTextColor(SSD1306_WHITE);
-            display->setCursor(getCenterX("KOTACON", 2), 10); // 中央配置
-            display->println("KOTACON");
-            display->setTextSize(1);
-            display->setCursor(getCenterX("Made by Kotani", 1), 40); // 中央配置
-            display->println("Made by Kotani");
-            // カウントダウン文字列を作成して中央配置
+            display->clearBuffer();
+            // タイトル
+            display->setFont(u8g2_font_fub14_tr); // 少し小さめの太字
+            display->drawStr(getCenterX("KOTACON", u8g2_font_fub14_tr), 32, "KOTACON"); 
+            // サブタイトル
+            display->setFont(u8g2_font_7x13_tr);
+            display->drawStr(getCenterX("Made by Kotani", u8g2_font_7x13_tr), 50, "Made by Kotani");
+            // カウントダウン
             char countdown[32];
             snprintf(countdown, sizeof(countdown), "Starting in %ds...", i);
-            display->setCursor(getCenterX(countdown, 1), 55);
-            display->print(countdown);
-            display->display();
+            display->drawStr(getCenterX(countdown, u8g2_font_6x10_tr), 62, countdown);
+            display->sendBuffer();
             delay(1000);
         }
     }
 
 private:
-    Adafruit_SSD1306* display;
+    U8G2* display;
 };
