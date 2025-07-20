@@ -235,9 +235,9 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
         
         const uint8_t* font;
         int yPos;
-        if (displayText.length() <= 8) {
+        if (displayText.length() <= 7) {
             font = u8g2_font_fub25_tr; // 40px * 8 
-        } else if (displayText.length() <= 10) {
+        } else if (displayText.length() <= 15) {
             font = u8g2_font_fub14_tr;
         } else {
             font = u8g2_font_6x10_tr;
