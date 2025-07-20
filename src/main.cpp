@@ -28,6 +28,7 @@
 
 #include "PythonStyleAnalyzer.h"
 #include "Peripherals.h"
+#include "StartupAnimation.h"
 
 // SSD1306ディスプレイ設定
 #define SCREEN_WIDTH 128
@@ -85,47 +86,11 @@ void setup() {
         Serial.println("エラー: SSD1306初期化失敗");
         while (true) delay(1000);
     }
-    
-    // ===== 5秒間のプログラミングモード（書き込みモード）開始 =====
-    Serial.println("Starting 5-second programming mode...");
-    
-    // プログラミングモード初期表示
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("USB->BLE Bridge");
-    display.println("===============");
-    display.println("");
-    display.println("Programming Mode");
-    display.println("Safe to upload");
-    display.println("");
-    display.println("Starting in 5s...");
-    display.display();
-    
-    // 5秒カウントダウン
-    for (int i = 5; i > 0; i--) {
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(SSD1306_WHITE);
-        display.setCursor(0, 0);
-        display.println("USB->BLE Bridge");
-        display.println("===============");
-        display.println("");
-        display.println("Programming Mode");
-        display.println("Safe to upload");
-        display.println("");
-        display.print("Starting in ");
-        display.print(i);
-        display.println("s...");
-        display.display();
-        
-        // 1秒待機
-        delay(1000);
-        
-        Serial.printf("Programming mode countdown: %d seconds remaining\n", i);
-    }
-    
+
+    // ===== 5秒間の起動画面アニメーション =====
+    StartupAnimation startupAnim(&display);
+    startupAnim.showStartupScreen();
+
     Serial.println("Programming mode finished. Starting Bridge mode...");
     
     // プログラミングモード終了の表示
