@@ -237,13 +237,13 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
         int yPos;
         if (displayText.length() <= 7) {
             font = u8g2_font_fub25_tr; // 40px * 8 
-        } else if (displayText.length() <= 15) {
-            font = u8g2_font_fub14_tr;
+        } else if (displayText.length() <= 12) {
+            font = u8g2_font_fub17_tr;
         } else {
             font = u8g2_font_6x10_tr;
         }
         // メイン文字を上部に配置（下部情報とかぶらないように）
-        int fontHeight = (font == u8g2_font_fub25_tr) ? 32 : (font == u8g2_font_fub14_tr ? 16 : 10);
+        int fontHeight = (font == u8g2_font_fub25_tr) ? 32 : (font == u8g2_font_fub17_tr ? 19 : 10);
         yPos = 16 + fontHeight / 2; // 24px付近に配置
         display->setFont(font);
 
