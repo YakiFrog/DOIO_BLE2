@@ -109,7 +109,7 @@ void setup() {
     Serial.println("Programming mode finished. Starting Bridge mode...");
 
     // プログラミングモード終了の表示
-    display.clearBuffer();
+    // display.clearBuffer();
     // display.setFont(u8g2_font_6x10_tr);
     // display.drawStr(0, 10, "USB->BLE Bridge");
     // display.drawStr(0, 22, "===============");
