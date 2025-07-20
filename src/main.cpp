@@ -140,7 +140,7 @@ void setup() {
     // display.drawStr(0, 58, "Connect keyboard");
     // display.sendBuffer();
 
-    // delay(1000);
+    delay(1000);
 
     analyzer = new PythonStyleAnalyzer(&display, &bleKeyboard);
     analyzer->begin();
