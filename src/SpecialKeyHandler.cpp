@@ -13,6 +13,9 @@ void displayTask(void* pvParameters) {
     static int lastDisplayType = -1; // 直前の表示タイプを記憶
     static String lastText1 = "";    // 前回のtext1を記憶
     static String lastText2 = "";    // 前回のtext2を記憶
+    static unsigned long lastTextChangeTime = 0; // 最後にキーが変わった時刻
+    const unsigned long TEXT_CHANGE_INTERVAL = 500; // 500ms以上変化がなければdelay
+
     for (;;) {
         if (xQueueReceive(displayQueue, &req, portMAX_DELAY) == pdTRUE) {
             // 特別キー表示の直後はDISPLAY_NORMALをスキップ
@@ -52,11 +55,18 @@ void displayTask(void* pvParameters) {
                     req.display->drawStr(xPos2, yPos2, req.text2.c_str());
                 }
                 req.display->sendBuffer();
+
+                unsigned long now = millis();
                 // キーが切り替わった場合はdelayなし
                 if (req.text1 != lastText1 || req.text2 != lastText2) {
+                    lastTextChangeTime = now;
                     // 上書き表示（delayなし）
                 } else {
-                    vTaskDelay(1000 / portTICK_PERIOD_MS); // 1秒間表示
+                    // 前回の表示から一定時間以上経過していればdelay
+                    if (now - lastTextChangeTime > TEXT_CHANGE_INTERVAL) {
+                        vTaskDelay(1000 / portTICK_PERIOD_MS); // 1秒間表示
+                        lastTextChangeTime = now;
+                    }
                 }
                 lastText1 = req.text1;
                 lastText2 = req.text2;
@@ -173,12 +183,12 @@ bool handleSpecialKeyDisplay(U8G2* display, const String& characters, const Stri
         return true;
     } else if (characters == "Up") {
         req.type = DISPLAY_TEXT;
-        req.text1 = "FORWARD";
+        req.text1 = "MOVE FWD";
         req.font = u8g2_font_fub14_tr;
         requestDisplay(req);
     } else if (characters == "Down") {
         req.type = DISPLAY_TEXT;
-        req.text1 = "BACKWARD";
+        req.text1 = "MOVE BKWD";
         req.font = u8g2_font_fub14_tr;
         requestDisplay(req);
     } else if (characters == "Left") {
