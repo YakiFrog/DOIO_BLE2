@@ -107,23 +107,23 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
             
             // 下部に状態情報
             display->setFont(u8g2_font_6x10_tr);
-            display->drawStr(0, 48, "USB: Connected");
-            
-            display->setCursor(0, 55);
-            display->print("BLE:");
-            if (bleKeyboard && bleKeyboard->isConnected()) {
-                display->print("OK");
-            } else {
-                display->print("--");
-            }
-            
-            display->setCursor(70, 55);
-            display->print("SHIFT:--");
+            display->drawStr(0, 52, "USB: Connected");
             
             display->setCursor(0, 62);
-            display->print("Uptime:");
-            display->print(millis() / 1000);
-            display->print("s");
+            display->print("BLE:");
+            if (bleKeyboard && bleKeyboard->isConnected()) {
+                display->print(" OK");
+            } else {
+                display->print(" --");
+            }
+            
+            display->setCursor(70, 62);
+            display->print("SHIFT: --");
+            
+            // display->setCursor(0, 62);
+            // display->print("Uptime:");
+            // display->print(millis() / 1000);
+            // display->print("s");
         } else {
             // 中央に大きく待機表示
             String displayText = "WAIT";
@@ -140,16 +140,16 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
             
             // 下部に状態情報
             display->setFont(u8g2_font_6x10_tr);
-            display->drawStr(0, 48, "USB: Waiting...");
-            
-            display->setCursor(0, 55);
-            display->print("BLE:--");
-            
-            display->setCursor(70, 55);
-            display->print("SHIFT:--");
-            
+            display->drawStr(0, 52, "USB: Waiting...");
+
             display->setCursor(0, 62);
-            display->print("Connect KB16");
+            display->print("BLE: --");
+
+            display->setCursor(70, 62);
+            display->print("SHIFT: --");
+            
+            // display->setCursor(0, 62);
+            // display->print("Connect KB16");
         }
         display->sendBuffer();
     }
@@ -224,13 +224,45 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
         } else if (characters.length() == 1) {
             // 単一文字
             displayText = characters;
-        } else if (characters.length() <= 10) {
-            // 10文字以下はそのまま表示
-            displayText = characters;
         } else {
+            // 複数キー対応: 各キーごとに省略名へ変換
+            String temp = "";
+            int start = 0;
+            int comma_pos = 0;
+            int count = 0;
+            while ((comma_pos = characters.indexOf(", ", start)) != -1) {
+            String key = characters.substring(start, comma_pos);
+            key.trim();
+            if (key == "Space" || key == " ") key = "SPC";
+            else if (key == "Enter" || key == "\n") key = "ENT";
+            else if (key == "Tab" || key == "\t") key = "TAB";
+            else if (key == "Backspace") key = "BS";
+            else if (key == "Delete") key = "DEL";
+            else if (key == "Escape") key = "ESC";
+            else if (key == "PrintScreen") key = "PRTSC";
+            temp += key;
+            temp += ", ";
+            start = comma_pos + 2;
+            count++;
+            }
+            // 最後のキー
+            if (start < characters.length()) {
+            String key = characters.substring(start);
+            key.trim();
+            if (key == "Space" || key == " ") key = "SPC";
+            else if (key == "Enter" || key == "\n") key = "ENT";
+            else if (key == "Tab" || key == "\t") key = "TAB";
+            else if (key == "Backspace") key = "BS";
+            else if (key == "Delete") key = "DEL";
+            else if (key == "Escape") key = "ESC";
+            else if (key == "PrintScreen") key = "PRTSC";
+            temp += key;
+            }
+            displayText = temp;
             // 10文字を超える場合のみ省略
-            displayText = characters.substring(0, 10);
-            displayText += "..";
+            if (displayText.length() > 10) {
+            displayText = displayText.substring(0, 10) + "..";
+            }
         }
         
         const uint8_t* font;
@@ -243,7 +275,7 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
             font = u8g2_font_6x10_tr;
         }
         // メイン文字を上部に配置（下部情報とかぶらないように）
-        int fontHeight = (font == u8g2_font_fub25_tr) ? 32 : (font == u8g2_font_fub17_tr ? 19 : 10);
+        int fontHeight = (font == u8g2_font_fub25_tr) ? 32 : (font == u8g2_font_fub17_tr ? 22 : 10);
         yPos = 16 + fontHeight / 2; // 24px付近に配置
         display->setFont(font);
 
@@ -264,28 +296,28 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
     display->setFont(u8g2_font_6x10_tr);
 
     // BLE接続状況とSHIFT状況を同じ行に表示
-    display->drawStr(0, 48, "BLE:");
+    display->drawStr(0, 52, "BLE:");
     if (bleKeyboard && bleKeyboard->isConnected()) {
-        display->drawStr(30, 48, "OK");
+        display->drawStr(30, 52, "OK");
     } else {
-        display->drawStr(30, 48, "--");
+        display->drawStr(30, 52, "--");
     }
 
     // SHIFT状況を右側に表示
-    display->drawStr(70, 48, "SHIFT:");
+    display->drawStr(70, 52, "SHIFT:");
     if (shiftPressed) {
-        display->drawStr(120, 48, "ON");
+        display->drawStr(110, 52, "ON");
     } else {
-        display->drawStr(120, 48, "--");
+        display->drawStr(110, 52, "--");
     }
 
     // キー名を最下部に表示
     display->drawStr(0, 62, "Key:");
     String shortKeys = keyNames.length() > 0 ? keyNames : "None";
-    if (shortKeys.length() > 16) {
+    if (shortKeys.length() > 15) {
         shortKeys = shortKeys.substring(0, 13) + "...";
     }
-    display->drawStr(40, 62, shortKeys.c_str());
+    display->drawStr(30, 62, shortKeys.c_str());
 
     display->sendBuffer();
 }
