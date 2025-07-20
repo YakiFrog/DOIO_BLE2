@@ -214,11 +214,12 @@ void PythonStyleAnalyzer::updateDisplayWithKeys(const String& hexData, const Str
         return;
     }
 
-    // 通常表示要求をキューに入れる
+    // 通常表示要求をキューに入れる（2行表示対応）
     DisplayRequest req;
     req.type = DISPLAY_NORMAL;
     req.display = display;
-    req.text = keyNames.length() > 0 ? keyNames : "---";
+    req.text1 = characters.length() > 0 ? characters : "---"; // メイン
+    req.text2 = keyNames.length() > 0 ? keyNames : "";        // サブ（バイトキー名）
     req.font = u8g2_font_fub25_tr;
     requestDisplay(req);
 }

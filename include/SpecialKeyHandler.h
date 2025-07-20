@@ -16,7 +16,8 @@ enum DisplayType {
 struct DisplayRequest {
     DisplayType type;
     U8G2* display;
-    String text;
+    String text1; // メイン表示
+    String text2; // サブ表示（例：バイトキー名）
     const unsigned char* bitmap;
     int bmp_w;
     int bmp_h;

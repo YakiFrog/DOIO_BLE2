@@ -13,15 +13,26 @@ void displayTask(void* pvParameters) {
     for (;;) {
         if (xQueueReceive(displayQueue, &req, portMAX_DELAY) == pdTRUE) {
             if (req.type == DISPLAY_NORMAL) {
-                // 通常テキスト表示
+                // 2行表示（メイン＋サブ）
                 req.display->clearBuffer();
                 req.display->setFont(req.font);
-                req.display->drawStr(0, 0, req.text.c_str());
+                // メイン文字（中央上部）
+                int textWidth1 = req.display->getStrWidth(req.text1.c_str());
+                int xPos1 = (128 - textWidth1) / 2;
+                int fontHeight1 = req.display->getFontAscent() - req.display->getFontDescent();
+                int yPos1 = 16 + fontHeight1 / 2;
+                req.display->drawStr(xPos1, yPos1, req.text1.c_str());
+                req.display->setFont(u8g2_font_6x10_tr);
+                // 下部情報（BLE/SHIFT/Key名）
+                req.display->drawStr(0, 52, "BLE: --");
+                req.display->drawStr(70, 52, "SHIFT: --");
+                req.display->drawStr(0, 62, "Key:");
+                req.display->drawStr(30, 62, req.text2.c_str());
                 req.display->sendBuffer();
             } else if (req.type == DISPLAY_TEXT) {
                 req.display->clearBuffer();
                 req.display->setFont(req.font);
-                drawCenteredText(req.display, req.text.c_str(), req.font);
+                drawCenteredText(req.display, req.text1.c_str(), req.font);
                 req.display->sendBuffer();
                 vTaskDelay(1000 / portTICK_PERIOD_MS);
             } else if (req.type == DISPLAY_ANIMATION) {
@@ -123,13 +134,13 @@ bool handleSpecialKeyDisplay(U8G2* display, const String& characters, const Stri
         return true;
     } else if (characters == "s") {
         req.type = DISPLAY_TEXT;
-        req.text = "SHIFT ON!!";
+        req.text1 = "SHIFT ON!!";
         req.font = u8g2_font_fub14_tr;
         requestDisplay(req);
         return true;
     } else if (characters == "e") {
         req.type = DISPLAY_TEXT;
-        req.text = "ESCAPE!!";
+        req.text1 = "ESCAPE!!";
         req.font = u8g2_font_fub14_tr;
         requestDisplay(req);
         return true;
