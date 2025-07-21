@@ -101,69 +101,27 @@ void PythonStyleAnalyzer::updateDisplayIdle() {
 
     // 3秒間キー入力がない場合はアイドル表示
     if (millis() - lastKeyEventTime > 3000) {
-        display->clearBuffer();
-        
         if (isConnected) {
-            // 中央に大きく待機表示
-            String displayText = "READY";
-            
-            // フォントサイズを設定
-            display->setFont(u8g2_font_fub14_tr);
-
-            // 文字幅を計算して左右中央配置
-            int totalWidth = display->getStrWidth(displayText.c_str());
-            int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-            int yPos = SCREEN_HEIGHT / 2; // 画面の縦中央
-
-            display->drawStr(xPos, yPos, displayText.c_str());
-            
-            // 下部に状態情報
-            display->setFont(u8g2_font_6x10_tr);
-            display->drawStr(0, 52, "USB: Connected");
-            
-            display->setCursor(0, 62);
-            display->print("BLE:");
-            if (bleKeyboard && bleKeyboard->isConnected()) {
-                display->print(" OK");
-            } else {
-                display->print(" --");
-            }
-            
-            display->setCursor(70, 62);
-            display->print("SHIFT: --");
-            
-            // display->setCursor(0, 62);
-            // display->print("Uptime:");
-            // display->print(millis() / 1000);
-            // display->print("s");
+            // "READY"ホップアニメーション表示要求
+            DisplayRequest req;
+            req.display = display;
+            req.type = DISPLAY_ANIMATION;
+            req.text1 = "READY";
+            req.font = u8g2_font_fub14_tr;
+            req.frames = 5;         // 1文字ずつホップ
+            req.frameDelay = 120;   // ms
+            req.jumpHeight = 8;     // ピクセル
+            requestDisplay(req);
         } else {
-            // 中央に大きく待機表示
-            String displayText = "WAIT";
-            
-            // フォントサイズを設定
-            display->setFont(u8g2_font_fub14_tr);
-
-            // 文字幅を計算して左右中央配置
-            int totalWidth = display->getStrWidth(displayText.c_str());
-            int xPos = (SCREEN_WIDTH - totalWidth) / 2;
-            int yPos = SCREEN_HEIGHT / 2; // 画面の縦中央
-
-            display->drawStr(xPos, yPos, displayText.c_str());
-            
-            // 下部に状態情報
-            display->setFont(u8g2_font_6x10_tr);
-            display->drawStr(0, 52, "USB: Waiting...");
-
-            display->setCursor(0, 62);
-            display->print("BLE: --");
-
-            display->setCursor(70, 62);
-            display->print("SHIFT: --");
-            
-            // display->setCursor(0, 62);
-            // display->print("Connect KB16");
+            // WAITは通常の中央表示
+            DisplayRequest req;
+            req.display = display;
+            req.type = DISPLAY_TEXT;
+            req.font = u8g2_font_fub14_tr;
+            req.text1 = "WAIT";
+            req.text2 = "";
+            requestDisplay(req);
         }
-        display->sendBuffer();
     }
 }
 

@@ -71,18 +71,29 @@ void displayTask(void* pvParameters) {
                 lastText1 = req.text1;
                 lastText2 = req.text2;
             } else if (req.type == DISPLAY_ANIMATION) {
-                int baseY = 0;
-                for (int i = 0; i < req.frames; ++i) {
-                    int yOffset = baseY;
-                    if (i % 2 == 1) yOffset -= req.jumpHeight;
+                // "READY"ホップアニメーション
+                if (req.text1 == "READY") {
+                    showHoppingTextAnimation(
+                        req.display,
+                        "READY",
+                        req.font ? req.font : u8g2_font_fub14_tr,
+                        req.jumpHeight > 0 ? req.jumpHeight : 8,
+                        req.frameDelay > 0 ? req.frameDelay : 120
+                    );
+                } else {
+                    int baseY = 0;
+                    for (int i = 0; i < req.frames; ++i) {
+                        int yOffset = baseY;
+                        if (i % 2 == 1) yOffset -= req.jumpHeight;
+                        req.display->clearBuffer();
+                        req.display->drawXBMP(0, yOffset, req.bmp_w, req.bmp_h, req.bitmap);
+                        req.display->sendBuffer();
+                        vTaskDelay(req.frameDelay / portTICK_PERIOD_MS); // フレーム間の遅延
+                    }
                     req.display->clearBuffer();
-                    req.display->drawXBMP(0, yOffset, req.bmp_w, req.bmp_h, req.bitmap);
+                    req.display->drawXBMP(0, baseY, req.bmp_w, req.bmp_h, req.bitmap);
                     req.display->sendBuffer();
-                    vTaskDelay(req.frameDelay / portTICK_PERIOD_MS); // フレーム間の遅延
                 }
-                req.display->clearBuffer();
-                req.display->drawXBMP(0, baseY, req.bmp_w, req.bmp_h, req.bitmap);
-                req.display->sendBuffer();
             }
             lastDisplayType = req.type; // 表示タイプを記憶
         }
@@ -105,6 +116,79 @@ void drawCenteredText(U8G2* display, const char* text, const uint8_t* font) {
     int fontHeight = display->getFontAscent() - display->getFontDescent();
     int yPos = (64 + fontHeight) / 2.4 - display->getFontDescent();
     display->drawStr(xPos, yPos, text);
+}
+
+// 1文字ずつホップするテキストアニメーション
+void showHoppingTextAnimation(U8G2* display, const char* text, const uint8_t* font, int hopHeight, int frameDelay) {
+    const int titleLen = strlen(text);
+    const int normalY = 32;
+    const int hopY = normalY - hopHeight;
+
+    // 文字ごとの幅を計算
+    int charWidths[16] = {0};
+    int totalWidth = 0;
+    display->setFont(font);
+    for (int i = 0; i < titleLen; i++) {
+        char c[2] = { text[i], '\0' };
+        charWidths[i] = display->getStrWidth(c);
+        totalWidth += charWidths[i];
+    }
+    int x = (128 - totalWidth) / 2;
+
+    for (int idx = 0; idx < titleLen; idx++) {
+        // アニメーション中に新しいリクエストが来ていれば即中断
+        if (uxQueueMessagesWaiting(displayQueue) > 0) return;
+
+        display->clearBuffer();
+        display->setFont(font);
+        int charX = x;
+        for (int i = 0; i < titleLen; i++) {
+            int y = (i == idx) ? hopY : normalY;
+            char c[2] = { text[i], '\0' };
+            display->drawStr(charX, y, c);
+            charX += charWidths[i];
+        }
+        // 下部情報
+        display->setFont(u8g2_font_6x10_tr);
+        display->drawStr(0, 52, "USB: Connected");
+        display->drawStr(0, 62, "BLE: OK");
+        display->drawStr(70, 62, "SHIFT: --");
+        display->sendBuffer();
+
+        // より即座な割り込みのため、短い遅延を複数回に分割
+        int totalDelay = frameDelay;
+        const int slice = 10; // 10msごとに割り込みチェック
+        while (totalDelay > 0) {
+            if (uxQueueMessagesWaiting(displayQueue) > 0) return;
+            int d = (totalDelay > slice) ? slice : totalDelay;
+            vTaskDelay(d / portTICK_PERIOD_MS);
+            totalDelay -= d;
+        }
+    }
+    // 最後に全て通常高さで表示（中断時も中央揃えで）
+    display->clearBuffer();
+    display->setFont(font);
+    int charX = x;
+    for (int i = 0; i < titleLen; i++) {
+        int y = normalY;
+        char c[2] = { text[i], '\0' };
+        display->drawStr(charX, y, c);
+        charX += charWidths[i];
+    }
+    display->setFont(u8g2_font_6x10_tr);
+    display->drawStr(0, 52, "USB: Connected");
+    display->drawStr(0, 62, "BLE: OK");
+    display->drawStr(70, 62, "SHIFT: --");
+    display->sendBuffer();
+    // 最後も割り込み可能に
+    int totalDelay = 400;
+    const int slice = 10;
+    while (totalDelay > 0) {
+        if (uxQueueMessagesWaiting(displayQueue) > 0) return;
+        int d = (totalDelay > slice) ? slice : totalDelay;
+        vTaskDelay(d / portTICK_PERIOD_MS);
+        totalDelay -= d;
+    }
 }
 
 // 画面表示要求を統一的に使う

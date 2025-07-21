@@ -38,3 +38,4 @@ void drawCenteredBitmap(U8G2* display, int bmp_w, int bmp_h, const unsigned char
 bool handleSpecialKeyDisplay(U8G2* display, const String& characters, const String& prevCharacters);
 void jumpBitmapAnimation(U8G2* display, const unsigned char* bitmap, int bmp_w, int bmp_h, int jumpHeight, int frames, int frameDelay);
 void drawCenteredText(U8G2* display, const char* text, const uint8_t* font);
+void showHoppingTextAnimation(U8G2* display, const char* text, const uint8_t* font, int hopHeight, int frameDelay);
