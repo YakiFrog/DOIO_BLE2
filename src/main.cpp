@@ -48,7 +48,7 @@
 // グローバル変数
 // Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
-BleKeyboard bleKeyboard("DOIO KB16 Bridge", "DOIO Bridge", 100);
+BleKeyboard bleKeyboard("KOTACON", "KOTACON", 100);
 PythonStyleAnalyzer* analyzer;
 
 // BLE接続制御フラグ
